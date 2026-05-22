@@ -6,6 +6,18 @@
 
 ## `CreateServers`
 
+先检查模板是否已经替换完整：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=examples/ecs-create-servers.cli-jsonInput.json \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
+```
+
+校验通过后，再执行脚本输出的 `commands.safe_exec`，或手动 dry-run：
+
 ```bash
 hcloud ECS CreateServers \
   --cli-region=cn-north-4 \
@@ -14,6 +26,18 @@ hcloud ECS CreateServers \
 ```
 
 ## `CreatePostPaidServers`
+
+先检查模板是否已经替换完整：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=examples/ecs-create-postpaid-servers.cli-jsonInput.json \
+  --operation=CreatePostPaidServers \
+  --region=cn-north-4 \
+  --pretty
+```
+
+校验通过后，再执行脚本输出的 `commands.safe_exec`，或手动 dry-run：
 
 ```bash
 hcloud ECS CreatePostPaidServers \
@@ -42,4 +66,5 @@ hcloud ECS CreatePostPaidServers \
 因此：
 
 - 模板先作为可审查骨架
+- 本地计划脚本先拦截未替换占位符和明显缺失字段
 - 真正跑 dry-run 时，再结合当前环境判断是否能继续

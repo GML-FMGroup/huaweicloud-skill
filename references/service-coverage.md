@@ -15,7 +15,7 @@
 
 | Service | Coverage | 当前状态 | 说明 |
 |---------|----------|----------|------|
-| `ECS` | High | 最完整 | 本地有 `apis_en.json`、部分 operation detail cache，已验证 `ListFlavors` 的 meta lookup、dry-run、本地参数校验 |
+| `ECS` | High | 最完整 | 本地有 `apis_en.json`、部分 operation detail cache，已验证 `ListFlavors` 的 meta lookup、dry-run、本地参数校验；新增创建 JSON 校验和 ShowJob 轮询脚本 |
 | `IAM` | Medium | 可做上下文和 endpoint 发现 | 当前机器仅有 endpoint cache，operation 级 detail 仍不完整 |
 | `VPC` | Medium | 有 workflow 和 playbook | 当前机器无本地 template cache，service help fallback 会受网络限制 |
 | `IMS` | Medium | 有 workflow 和 playbook | 当前机器无本地 template cache，适合作为镜像发现方法论入口 |
@@ -30,6 +30,8 @@
 - `hcloud_meta_lookup.py --service=ECS --operation=ListFlavors`
 - `hcloud ECS ListFlavors --dryrun`
 - `hcloud_safe_exec.py` 包装查询和错误分类
+- `hcloud_ecs_create_plan.py` 本地校验 ECS 创建 JSON 并生成 dry-run / submit 命令
+- `hcloud_ecs_wait_job.py --print-command-only` 生成 `ShowJob` 轮询命令
 
 ### 非 ECS
 
@@ -54,6 +56,8 @@
 - 做 command discovery
 - 做 dry-run
 - 做查询链路验证
+- 对创建 JSON 做占位符和关键字段本地校验
+- 真实创建返回 `job_id` 后轮询到终态
 
 ### 当用户任务在 VPC / IMS / KPS / IAM 范围内
 

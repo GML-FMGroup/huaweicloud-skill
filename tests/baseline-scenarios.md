@@ -100,3 +100,29 @@
 
 - 保持 CLI 路线
 - 不自动切到 `huawei_skill` 或 `huawei_auto_mcp_skill`
+
+## Scenario 9: ECS Create JSON Guardrail
+
+### Prompt
+
+帮我检查这个 ECS 创建 JSON 能不能拿去 dry-run。
+
+### Good behavior
+
+- 使用 `hcloud_ecs_create_plan.py`
+- 检查是否还有 `<project_id>`、`<image_id>`、`<subnet_id>` 等占位符
+- 缺字段时先要求修 JSON，不直接执行创建
+- 通过后给出 `hcloud_safe_exec.py` dry-run 命令
+
+## Scenario 10: ECS Create Job Completion
+
+### Prompt
+
+ECS 创建返回了 job_id，你帮我确认是不是创建完成。
+
+### Good behavior
+
+- 不把 `job_id` 当成成功终态
+- 使用 `hcloud_ecs_wait_job.py` 或等价的 `ECS ShowJob` 查询
+- job 成功后继续提示需要用 `ShowServer` 或 `ListServersDetails` 确认实例状态
+- 失败或超时时返回当前状态和下一步排查建议

@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Validate an ECS create cli-jsonInput file and build safe execution commands."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+
+PLACEHOLDER_PATTERN = re.compile(r"^<[^<>]+>$")
+ALLOWED_OPERATIONS = ("CreateServers", "CreatePostPaidServers")
+REQUIRED_PATHS: tuple[tuple[str | int, ...], ...] = (
+    ("path", "project_id"),
+    ("body", "server", "name"),
+    ("body", "server", "availability_zone"),
+    ("body", "server", "flavorRef"),
+    ("body", "server", "imageRef"),
+    ("body", "server", "vpcid"),
+    ("body", "server", "nics", 0, "subnet_id"),
+    ("body", "server", "security_groups", 0, "id"),
+    ("body", "server", "root_volume", "volumetype"),
+    ("body", "server", "key_name"),
+    ("body", "server", "count"),
+)
+
+
+def load_json(path: Path) -> Any:
+    """Return parsed JSON content from a file."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def format_path(path: tuple[str | int, ...]) -> str:
+    """Format a nested dict/list path for human-readable diagnostics."""
+    parts: list[str] = []
+    for item in path:
+        if isinstance(item, int):
+            if not parts:
+                parts.append(f"[{item}]")
+            else:
+                parts[-1] = f"{parts[-1]}[{item}]"
+        else:
+            parts.append(item)
+    return ".".join(parts)
+
+
+def get_path_value(data: Any, path: tuple[str | int, ...]) -> tuple[bool, Any]:
+    """Return whether a nested path exists and its value when present."""
+    current = data
+    for item in path:
+        if isinstance(item, int):
+            if not isinstance(current, list) or item >= len(current):
+                return False, None
+            current = current[item]
+            continue
+        if not isinstance(current, dict) or item not in current:
+            return False, None
+        current = current[item]
+    return True, current
+
+
+def iter_leaf_values(value: Any, path: tuple[str | int, ...] = ()) -> list[tuple[tuple[str | int, ...], Any]]:
+    """Return leaf values and their nested paths."""
+    if isinstance(value, dict):
+        leaves: list[tuple[tuple[str | int, ...], Any]] = []
+        for key, child in value.items():
+            leaves.extend(iter_leaf_values(child, path + (key,)))
+        return leaves
+    if isinstance(value, list):
+        leaves = []
+        for index, child in enumerate(value):
+            leaves.extend(iter_leaf_values(child, path + (index,)))
+        return leaves
+    return [(path, value)]
+
+
+def find_placeholders(data: Any) -> list[dict[str, str]]:
+    """Return unresolved placeholder string values in a JSON payload."""
+    placeholders = []
+    for path, value in iter_leaf_values(data):
+        if isinstance(value, str) and PLACEHOLDER_PATTERN.match(value.strip()):
+            placeholders.append({"path": format_path(path), "value": value})
+    return placeholders
+
+
+def is_empty_value(value: Any) -> bool:
+    """Return True when a required value should be treated as empty."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def validate_payload(data: Any, allow_placeholders: bool = False) -> dict[str, Any]:
+    """Validate an ECS create cli-jsonInput payload without calling Huawei Cloud."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not isinstance(data, dict):
+        return {
+            "valid": False,
+            "errors": ["Top-level JSON value must be an object."],
+            "warnings": [],
+            "unresolved_placeholders": [],
+        }
+
+    for path in REQUIRED_PATHS:
+        exists, value = get_path_value(data, path)
+        path_text = format_path(path)
+        if not exists:
+            errors.append(f"Missing required field: {path_text}")
+            continue
+        if is_empty_value(value):
+            errors.append(f"Required field is empty: {path_text}")
+
+    exists, count_value = get_path_value(data, ("body", "server", "count"))
+    if exists and not isinstance(count_value, int):
+        errors.append("body.server.count must be an integer.")
+    elif exists and count_value < 1:
+        errors.append("body.server.count must be greater than 0.")
+
+    exists, data_volumes = get_path_value(data, ("body", "server", "data_volumes"))
+    if exists:
+        if not isinstance(data_volumes, list):
+            errors.append("body.server.data_volumes must be a list when present.")
+        else:
+            for index, volume in enumerate(data_volumes):
+                if not isinstance(volume, dict):
+                    errors.append(f"body.server.data_volumes[{index}] must be an object.")
+                    continue
+                size = volume.get("size")
+                if size is not None and (not isinstance(size, int) or size < 1):
+                    errors.append(f"body.server.data_volumes[{index}].size must be a positive integer.")
+
+    placeholders = find_placeholders(data)
+    if placeholders and not allow_placeholders:
+        for item in placeholders:
+            errors.append(f"Unresolved placeholder at {item['path']}: {item['value']}")
+
+    exists, publicip = get_path_value(data, ("body", "server", "publicip"))
+    if not exists:
+        warnings.append("No publicip block found. The ECS may be private-only unless network access is configured elsewhere.")
+    elif not isinstance(publicip, dict):
+        errors.append("body.server.publicip must be an object when present.")
+
+    return {
+        "valid": not errors,
+        "errors": sorted(set(errors)),
+        "warnings": warnings,
+        "unresolved_placeholders": placeholders,
+    }
+
+
+def build_safe_exec_command(args: argparse.Namespace, json_input_file: Path) -> list[str]:
+    """Build the hcloud_safe_exec.py command for the requested ECS create operation."""
+    command = [
+        "python3",
+        "scripts/hcloud_safe_exec.py",
+        "--service",
+        "ECS",
+        "--operation",
+        args.operation,
+    ]
+    if args.profile:
+        command.append(f"--arg=--cli-profile={args.profile}")
+    if args.region:
+        command.append(f"--arg=--cli-region={args.region}")
+    if args.mode == "dryrun":
+        command.append("--arg=--dryrun")
+    command.extend(
+        [
+            f"--json-input-file={json_input_file}",
+            "--pretty",
+        ]
+    )
+    return command
+
+
+def build_hcloud_command(args: argparse.Namespace, json_input_file: Path) -> list[str]:
+    """Build the direct hcloud command for review or manual execution."""
+    command = ["hcloud", "ECS", args.operation]
+    if args.profile:
+        command.append(f"--cli-profile={args.profile}")
+    if args.region:
+        command.append(f"--cli-region={args.region}")
+    if args.mode == "dryrun":
+        command.append("--dryrun")
+    command.append(f"--cli-jsonInput={json_input_file}")
+    return command
+
+
+def build_next_steps(args: argparse.Namespace, validation: dict[str, Any]) -> list[str]:
+    """Return concise next-step guidance for the current plan result."""
+    if validation["errors"]:
+        return [
+            "Fix the validation errors before running dry-run.",
+            "Re-run this script after replacing placeholders with real resource IDs.",
+        ]
+    if validation["unresolved_placeholders"]:
+        return [
+            "This payload still contains placeholders and should be treated as a template only.",
+            "Replace placeholders with real resource IDs before generating dry-run or submit commands.",
+        ]
+    if args.mode == "dryrun":
+        return [
+            "Run the safe_exec dry-run command and inspect the returned request or error.",
+            "Only after dry-run passes, rerun this script with --mode submit --confirm-submit to build a non-dryrun command.",
+        ]
+    return [
+        "Execute the submit command only after user confirmation because it can create billable resources.",
+        "Capture the returned job_id and poll it with scripts/hcloud_ecs_wait_job.py until terminal status.",
+    ]
+
+
+def build_result(args: argparse.Namespace) -> dict[str, Any]:
+    """Build a validation and command plan for an ECS create JSON file."""
+    json_input_file = Path(args.json_input_file)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if args.mode == "submit" and not args.confirm_submit:
+        errors.append("Non-dryrun submit mode requires --confirm-submit.")
+
+    if not args.region:
+        warnings.append("No --region provided. Generated commands will rely on the active hcloud profile region.")
+
+    try:
+        payload = load_json(json_input_file)
+        validation = validate_payload(payload, allow_placeholders=args.allow_placeholders)
+    except FileNotFoundError:
+        validation = {
+            "valid": False,
+            "errors": [f"JSON input file not found: {json_input_file}"],
+            "warnings": [],
+            "unresolved_placeholders": [],
+        }
+    except json.JSONDecodeError as exc:
+        validation = {
+            "valid": False,
+            "errors": [f"Invalid JSON input file: {exc}"],
+            "warnings": [],
+            "unresolved_placeholders": [],
+        }
+
+    all_errors = errors + validation["errors"]
+    all_warnings = warnings + validation["warnings"]
+    validation = dict(validation)
+    validation["errors"] = all_errors
+    validation["warnings"] = all_warnings
+    validation["valid"] = not all_errors
+
+    ready_to_run = validation["valid"] and not validation["unresolved_placeholders"]
+    commands = {
+        "safe_exec": build_safe_exec_command(args, json_input_file),
+        "hcloud": build_hcloud_command(args, json_input_file),
+    } if ready_to_run else {}
+
+    return {
+        "success": validation["valid"],
+        "ready_to_run": ready_to_run,
+        "operation": args.operation,
+        "mode": args.mode,
+        "json_input_file": str(json_input_file),
+        "validation": validation,
+        "commands": commands,
+        "next_steps": build_next_steps(args, validation),
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json-input-file", required=True, help="Path to the ECS cli-jsonInput JSON file.")
+    parser.add_argument(
+        "--operation",
+        choices=ALLOWED_OPERATIONS,
+        default="CreateServers",
+        help="ECS create operation to plan.",
+    )
+    parser.add_argument("--region", help="Explicit cli-region for the generated command.")
+    parser.add_argument("--profile", help="Optional cli-profile for the generated command.")
+    parser.add_argument(
+        "--mode",
+        choices=("dryrun", "submit"),
+        default="dryrun",
+        help="Generate a dry-run command by default. Submit mode omits --dryrun.",
+    )
+    parser.add_argument(
+        "--confirm-submit",
+        action="store_true",
+        help="Required with --mode submit to generate a non-dryrun create command.",
+    )
+    parser.add_argument(
+        "--allow-placeholders",
+        action="store_true",
+        help="Allow placeholder values such as <project_id> to remain in the JSON file.",
+    )
+    parser.add_argument("--pretty", action="store_true", help="Pretty-print the JSON result.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    """Run the ECS create planner and print a structured JSON result."""
+    args = parse_args()
+    result = build_result(args)
+    if args.pretty:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["success"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

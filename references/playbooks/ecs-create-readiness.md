@@ -75,6 +75,69 @@ python3 scripts/hcloud_safe_exec.py \
   --pretty
 ```
 
+### 5. 创建 JSON 本地校验
+
+把已确认的镜像、规格、网络、密钥对、磁盘参数写入 `cli-jsonInput` 文件后，先做本地校验：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
+```
+
+通过标准：
+
+- `success=true`
+- `validation.errors` 为空
+- 没有 `<project_id>`、`<image_id>`、`<subnet_id>` 等占位符
+- 输出中生成了 `commands.safe_exec`
+
+如果 `validation.errors` 不为空，先修 JSON，不要进入 dry-run。
+
+### 6. dry-run
+
+执行上一步输出的 `commands.safe_exec`，或者手动使用：
+
+```bash
+python3 scripts/hcloud_safe_exec.py \
+  --service ECS \
+  --operation CreateServers \
+  --arg=--cli-region=cn-north-4 \
+  --arg=--dryrun \
+  --json-input-file=<path-to-json> \
+  --pretty
+```
+
+dry-run 通过只说明命令和参数骨架可被校验，不代表资源已经创建。
+
+### 7. 真实提交和终态验证
+
+只有当用户明确确认会产生费用的真实创建后，才生成非 dry-run 命令：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --mode=submit \
+  --confirm-submit \
+  --pretty
+```
+
+真实提交返回 `job_id` 后，必须轮询到终态：
+
+```bash
+python3 scripts/hcloud_ecs_wait_job.py \
+  --job-id=<job-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+只有 job 进入 `SUCCESS`，并且后续 `ShowServer` 或 `ListServersDetails` 能看到目标实例处于稳定状态，才可以说创建完成。
+
 ## 还需要确认的外部依赖
 
 除了 ECS 本身，还要确认：
@@ -108,12 +171,11 @@ python3 scripts/hcloud_safe_exec.py \
 例如：
 
 ```bash
-python3 scripts/hcloud_safe_exec.py \
-  --service ECS \
-  --operation CreateServers \
-  --arg=--cli-region=cn-north-4 \
-  --arg=--dryrun \
-  --json-input-file=<path-to-json>
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
 ```
 
 ### 3. 真执行前先讲清前提
@@ -124,9 +186,11 @@ python3 scripts/hcloud_safe_exec.py \
 - 用哪个 flavor / AZ
 - 用哪个 image / keypair / subnet
 - 这是试运行还是真实创建
+- 如果是真实创建，返回的 `job_id` 是什么，以及用什么命令轮询到终态
 
 ## 不要做的事
 
 - 不要在镜像、网络、keypair 未确认时直接创建
 - 不要把几十个参数都硬塞进一行命令
 - 不要先真执行再补解释
+- 不要只看到 `job_id` 就说创建成功

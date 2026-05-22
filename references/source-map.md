@@ -8,8 +8,6 @@
 
 1. `references/`
 2. `materials/hcloud-docs-md/`
-3. `materials/hcloud-docs-json/`
-4. `materials/hcloud-docs-pdf/`
 
 解释：
 
@@ -19,12 +17,6 @@
 - `materials/hcloud-docs-md/`
   - 是主要阅读源。
   - 适合 `rg`、摘取命令示例、整理章节内容。
-- `materials/hcloud-docs-json/`
-  - 是脚本抽取源。
-  - 适合按页定位、过滤目录页、提取高分页面内容。
-- `materials/hcloud-docs-pdf/`
-  - 是权威原件。
-  - 当 `md` 或 `json` 的内容明显损坏、断行或歧义时，用它回查。
 
 ## 当前原始文档用途
 
@@ -39,7 +31,6 @@
   - `--cli-waiter`
 - 主要来源：
   - `materials/hcloud-docs-md/华为云命令行工具服务 KooCLI 用户指南_md_dollar/output.md`
-  - `materials/hcloud-docs-json/华为云命令行工具服务 KooCLI 用户指南.json`
 
 ### 常见问题
 
@@ -53,7 +44,6 @@
   - 区域参数问题
 - 主要来源：
   - `materials/hcloud-docs-md/华为云命令行工具服务 KooCLI 常见问题_md_dollar/output.md`
-  - `materials/hcloud-docs-json/华为云命令行工具服务 KooCLI 常见问题.json`
 
 ### 快速入门
 
@@ -76,4 +66,4 @@
 
 - skill 运行时优先看 `references/`
 - 只有在 `references/` 没覆盖时，才回到 `materials/`
-- 回到 `materials/` 时，优先用 `md`，必要时配合 `json` 和 `pdf`
+- 回到 `materials/` 时，使用保留的 `hcloud-docs-md/`

@@ -86,16 +86,27 @@ python3 scripts/hcloud_meta_lookup.py \
 
 ### 6. 创建 ECS（先 dry-run）
 
-使用 `--cli-jsonInput` 传入复杂参数，先 dry-run 验证：
+使用 `--cli-jsonInput` 传入复杂参数。先用本地脚本检查占位符和关键字段：
 
 ```bash
-hcloud ECS CreateServers \
-  --cli-region=cn-north-4 \
-  --dryrun \
-  --cli-jsonInput=file://examples/ecs-create-servers.cli-jsonInput.json
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-filled-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
 ```
 
 JSON 模板可参考 `examples/` 目录下的文件，替换其中的占位值后使用。
+
+校验通过后，按脚本输出的 `hcloud_safe_exec.py` 命令做 dry-run。真实提交返回 `job_id` 后，用下面的方式轮询到终态：
+
+```bash
+python3 scripts/hcloud_ecs_wait_job.py \
+  --job-id=YOUR_JOB_ID \
+  --region=cn-north-4 \
+  --project-id=YOUR_PROJECT_ID \
+  --pretty
+```
 
 ## 目录结构
 
@@ -106,7 +117,9 @@ huaweicloud-skill/
 │   ├── hcloud_context_inspect.py   # 上下文探查
 │   ├── hcloud_safe_exec.py         # 安全执行包装
 │   ├── hcloud_prewarm_cache.py     # 缓存预热
-│   └── hcloud_meta_lookup.py       # 本地元数据查询
+│   ├── hcloud_meta_lookup.py       # 本地元数据查询
+│   ├── hcloud_ecs_create_plan.py   # ECS 创建 JSON 校验和命令生成
+│   └── hcloud_ecs_wait_job.py      # ECS job 终态轮询
 ├── references/               # 整理后的参考资料
 │   ├── workflow.md                 # 标准执行流程
 │   ├── auth-and-context.md         # 认证与上下文规则
@@ -130,14 +143,13 @@ huaweicloud-skill/
 │   ├── ecs-create-servers.cli-jsonInput.json
 │   └── ecs-create-postpaid-servers.cli-jsonInput.json
 ├── materials/                # KooCLI 原始文档资料
-│   ├── hcloud-docs-md/
-│   ├── hcloud-docs-json/
-│   ├── hcloud-docs-pdf/
-│   └── hcloud-docs-zip/
+│   └── hcloud-docs-md/
 └── tests/                    # 测试场景与验证记录
     ├── baseline-scenarios.md
     ├── trigger-cases.md
-    └── manual-validation-2026-04-23.md
+    ├── manual-validation-2026-04-23.md
+    ├── test_hcloud_ecs_create_plan.py
+    └── test_hcloud_ecs_wait_job.py
 ```
 
 ## 前置条件

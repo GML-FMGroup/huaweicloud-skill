@@ -104,6 +104,32 @@ hcloud <service> <operation> \
 - 启停
 - 批量动作
 
+### ECS 创建类额外护栏
+
+ECS 创建类任务在 dry-run 前先校验 `cli-jsonInput`：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=<region> \
+  --pretty
+```
+
+只有当 `validation.errors` 为空时，才使用输出里的 `commands.safe_exec` 进入 dry-run。
+
+如果真实提交返回 `job_id`，继续使用：
+
+```bash
+python3 scripts/hcloud_ecs_wait_job.py \
+  --job-id=<job-id> \
+  --region=<region> \
+  --project-id=<project-id> \
+  --pretty
+```
+
+在 job 到达终态之前，不要宣称创建完成。
+
 ## 四、复杂参数优先 `--cli-jsonInput`
 
 当遇到以下情况时，不要手拼长命令：

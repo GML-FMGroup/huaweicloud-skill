@@ -205,6 +205,51 @@ python3 scripts/hcloud_meta_lookup.py \
   --pretty
 ```
 
+### 5. ECS 创建计划校验
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-filled-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
+```
+
+用途：
+
+- 校验 ECS 创建 JSON 是否还包含 `<project_id>` 等占位符
+- 检查关键字段是否缺失或为空
+- 生成推荐的 `hcloud_safe_exec.py` dry-run 命令
+- 防止在依赖未确认时直接进入真实创建
+
+如果 dry-run 已通过，并且用户明确确认真实创建，再生成非 dry-run 命令：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --mode=submit \
+  --confirm-submit \
+  --pretty
+```
+
+### 6. ECS job 终态轮询
+
+```bash
+python3 scripts/hcloud_ecs_wait_job.py \
+  --job-id=<job-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 对 `CreateServers`、`CreatePostPaidServers` 等返回的 `job_id` 调用 `ECS ShowJob`
+- 持续轮询直到 `SUCCESS`、`FAILED`、`ERROR` 等终态
+- 避免只看到请求提交就误报资源创建完成
+
 ## 默认执行规则
 
 - 不要为了默认上下文就先追问 AK/SK。
@@ -212,7 +257,9 @@ python3 scripts/hcloud_meta_lookup.py \
 - 系统参数统一优先使用 `cli-*` 新参数名。
 - 查询类默认走 JSON 输出，不默认走 table。
 - 复杂 body 优先 `--cli-jsonInput`，不要手工拼几百字符命令。
+- ECS 创建类 JSON 先用 `hcloud_ecs_create_plan.py` 检查占位符和关键字段。
 - 变更类默认先查证据，再 `--dryrun`，再执行。
+- ECS 创建类真实提交后，必须用 `hcloud_ecs_wait_job.py` 或等价 `ShowJob` 查询跟到终态。
 - `--cli-waiter` 有重复调用风险，默认只建议用于查询或状态轮询。
 - 如果 live help 因网络或元数据问题失败，改走本地 meta cache 和 `references/`，不要瞎猜参数。
 
@@ -225,6 +272,7 @@ python3 scripts/hcloud_meta_lookup.py \
 - `hcloud` 命令发现与构造
 - CLI 认证、区域、项目和缓存问题排查
 - ECS 查询与创建前准备
+- ECS 创建 JSON 本地校验、dry-run 命令生成和 job 终态轮询
 - VPC 网络前置检查方法
 
 当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS 主要提供工作流和发现方法，不承诺已经沉淀了全量稳定 operation 清单。

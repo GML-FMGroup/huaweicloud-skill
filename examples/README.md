@@ -40,11 +40,37 @@
 
 ### 3. 先 dry-run
 
-先用 dry-run 看请求是否能被本地校验通过。
+先用本地计划脚本检查模板是否已经替换完整：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=examples/ecs-create-servers.cli-jsonInput.json \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --pretty
+```
+
+如果仍有 `<project_id>` 之类的占位符，脚本会失败并列出具体字段。
+
+校验通过后，再按脚本输出的 `commands.safe_exec` 做 dry-run。
 
 ### 4. 再真实执行
 
 只有在依赖都确认过之后，才考虑真实创建。
+
+真实创建必须显式使用：
+
+```bash
+python3 scripts/hcloud_ecs_create_plan.py \
+  --json-input-file=<path-to-json> \
+  --operation=CreateServers \
+  --region=cn-north-4 \
+  --mode=submit \
+  --confirm-submit \
+  --pretty
+```
+
+提交后如果返回 `job_id`，继续使用 `scripts/hcloud_ecs_wait_job.py` 轮询到终态。
 
 ## 注意
 
