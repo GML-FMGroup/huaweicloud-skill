@@ -1,6 +1,6 @@
 # huaweicloud-skill
 
-基于 [华为云 KooCLI (hcloud)](https://support.huaweicloud.com/cli/index.html) 的 AI Agent 执行型技能，让 Agent 能稳定完成华为云资源的查询、分析、规划和变更操作。
+基于华为云 KooCLI (hcloud) 的 AI Agent 执行型技能，让 Agent 能稳定完成华为云资源的查询、分析、规划和变更操作。
 
 ## 功能定位
 
