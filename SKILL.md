@@ -87,20 +87,6 @@ version: "0.1.0"
 - 任务需要查看 `service` / `operation` 列表、构造 `--cli-jsonInput`、使用 `--cli-query`、`--dryrun`、`--cli-waiter` 等 CLI 能力。
 - 任务需要排查 `hcloud` 的认证、区域、项目、缓存、网络、输出格式问题。
 
-## 与其他 Huawei skill 的边界
-
-- `huawei_skill`
-  - 走 MCP API 和 schema 精确调用。
-  - 如果用户明确指定 MCP 路线，优先使用它，不要切到本 skill。
-- `huawei_auto_mcp_skill`
-  - 走自主 MCP 的 `run_task`。
-  - 如果用户明确要自然语言直连自主 MCP，优先使用它。
-- `huawei-terraform-skill`
-  - 走 Terraform/OpenTofu。
-  - 如果目标是生成或执行 IaC，优先使用它。
-- 本 skill
-  - 只处理 `hcloud` CLI 路线。
-  - 除非用户要求比较方案，否则不要混用另一套方案的执行结果。
 
 ## 资料入口
 
