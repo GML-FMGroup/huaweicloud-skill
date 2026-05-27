@@ -158,6 +158,8 @@ huaweicloud-skill/
 │   ├── hcloud_prewarm_cache.py     # 缓存预热
 │   ├── hcloud_meta_lookup.py       # 本地元数据查询
 │   ├── hcloud_resource_discovery.py # service registry 驱动的只读资源发现
+│   ├── hcloud_resource_query.py     # 显式参数的资源级只读查询
+│   ├── hcloud_service_readiness.py  # 多服务只读 readiness 检查
 │   ├── hcloud_readonly_smoke.py     # 多服务只读 smoke 查询计划/执行
 │   ├── hcloud_change_plan.py        # 通用变更风险计划
 │   ├── hcloud_service_change_plan.py # 服务级 planner-only 变更计划
@@ -214,10 +216,12 @@ python3 -m unittest discover tests
 python3 scripts/check_materials_drift.py --pretty
 python3 scripts/check_question_coverage.py --pretty
 python3 scripts/hcloud_readonly_smoke.py --service EIP --service VPC --region=<region> --project-id=<project-id> --pretty
+python3 scripts/hcloud_service_readiness.py --service VPC --service ELB --region=<region> --project-id=<project-id> --pretty
+python3 scripts/hcloud_resource_query.py --service EIP --operation ShowPublicip --param publicip_id=<publicip-id> --region=<region> --project-id=<project-id> --pretty
 python3 scripts/hcloud_readonly_smoke.py --service CDN --region=<region> --project-id=<project-id> --execute --strict --pretty
 ```
 
-`check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。默认每个出现在问题集里的服务至少需要 10% registry 覆盖率，可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整。
+`check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。默认每个出现在问题集里的服务至少需要 10% registry 覆盖率，可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整。Excel 验证集里的已注册 operation 还会检查是否存在可执行路径：list 查询走 `hcloud_resource_discovery.py`，需要资源 ID 的 show/list 查询走 `hcloud_resource_query.py`，变更类只允许 planner-only。
 
 ## 前置条件
 

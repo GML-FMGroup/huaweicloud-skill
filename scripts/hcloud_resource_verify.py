@@ -32,11 +32,14 @@ SERVICE_COLLECTION_KEYS = {
     ),
     "EVS": ("volumes", "snapshots", "attachments", "items"),
     "NAT": ("nat_gateways", "dnat_rules", "snat_rules", "transit_ips", "items"),
-    "RDS": ("instances", "instance", "items"),
+    "RDS": ("instances", "instance", "configurations", "configuration", "items"),
     "CCE": ("clusters", "nodes", "items"),
     "CDN": ("domains", "domain", "items"),
     "DNS": ("recordsets", "recordset", "zones", "items"),
     "SCM": ("certificates", "certificate", "items"),
+    "CES": ("metrics", "items"),
+    "IMS": ("images", "items"),
+    "KPS": ("keypairs", "keypair", "items"),
 }
 
 ID_KEYS = (
@@ -53,6 +56,8 @@ ID_KEYS = (
     "recordset_id",
     "certificate_id",
     "nat_gateway_id",
+    "config_id",
+    "configuration_id",
 )
 NAME_KEYS = (
     "name",
@@ -136,6 +141,9 @@ def collect_dicts(payload: Any, service: str) -> list[dict[str, Any]]:
                         collected.append(nested)
             elif isinstance(item, dict):
                 collected.append(item)
+        if not collected and any(normalize(value.get(key)) for key in ID_KEYS):
+            collected.append(value)
+            return
         if not collected:
             for nested in value.values():
                 if isinstance(nested, (dict, list)):

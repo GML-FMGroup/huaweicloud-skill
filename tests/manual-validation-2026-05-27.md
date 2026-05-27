@@ -179,3 +179,89 @@ python3 scripts/hcloud_service_change_plan.py \
 - 风险等级为 `medium`。
 - dry-run 命令包含 `--dryrun`。
 - submit 命令只作为计划输出，不能在没有单独确认的情况下执行。
+
+## 验证 6：data.xlsx 执行路径门禁
+
+### Command shape
+
+```bash
+python3 scripts/check_question_coverage.py --pretty
+```
+
+### Result
+
+- `generated_questions` 共检查 26 个 JSON 文件，448 个唯一 operation。
+- `data.xlsx` 共解析 38 条人工 E2E 记录。
+- workbook 中的普通列表查询映射到 `scripts/hcloud_resource_discovery.py`。
+- workbook 中的目标型只读查询映射到 `scripts/hcloud_resource_query.py`，包括 CCE `ShowCluster/ListNodes`、CDN `ShowDomain`、EIP `ShowPublicip`、ELB `ListMembers`、RDS `ShowConfiguration`。
+- `execution_path_error_count=0`。
+- workbook 原始记录里的 RDS `ShowConfigurationDetail` 已映射到 KooCLI 实际可执行操作 `ShowConfiguration`。
+- OBS 仍作为未注册服务记录在 `unregistered_services` 中，没有被当作当前门禁失败。
+
+## 验证 7：service readiness 与资源级只读查询
+
+### Command shape
+
+```bash
+python3 scripts/hcloud_service_readiness.py \
+  --service VPC \
+  --service EIP \
+  --service RDS \
+  --service ELB \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_resource_query.py \
+  --service EIP \
+  --operation ShowPublicip \
+  --param publicip_id=<publicip-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_resource_query.py \
+  --service ELB \
+  --operation ListMembers \
+  --param pool_id=<pool-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_resource_query.py \
+  --service RDS \
+  --operation ShowConfigurationDetail \
+  --param config_id=<config-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute \
+  --pretty
+```
+
+### Result
+
+- VPC/EIP/RDS/ELB readiness 成功执行；缺少显式目标 ID 的详情类检查被标记为 skipped，没有猜测参数。
+- 资源级查询成功执行：
+  - EIP `ShowPublicip` 返回 1 个目标资源。
+  - ELB `ListMembers` 返回 2 个成员资源。
+  - RDS `ShowConfigurationDetail` 通过别名映射执行 `ShowConfiguration`，返回 1 个参数模板对象。
+- 扩展 readiness 对 EVS/NAT/CCE/CDN/DNS/SCM/CES 执行成功：
+  - EVS/NAT/CCE/CDN/SCM 查询成功，当前账号/区域下部分服务返回 0 个资源。
+  - DNS 返回 2 个 public zone 和 6 条 record set。
+  - CES `ListMetrics` 返回 644 个 metric。
+  - CCE `ShowCluster/ListNodes` 和 CDN `ShowDomain` 因缺少目标 ID 被正确跳过。
+
+### Follow-up Fix
+
+- readiness 的非 strict 执行模式现在只放过云端执行失败，不再掩盖 plan 阶段失败。
+- RDS workbook 别名 `ShowConfigurationDetail` 映射到 KooCLI 实际操作 `ShowConfiguration`。
+- RDS 参数模板详情响应是顶层对象，resource verifier 已支持这种响应形态。

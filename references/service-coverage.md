@@ -30,6 +30,7 @@
 | `CCE` / `CDN` / `DNS` / `SCM` / `CES` | Low | 已登记最小验证入口 | 来自人工 E2E 验证集和本地 service 存在性检查，仅用于前置发现和回归统计 |
 
 `query_operations` 表示可作为通用 discovery 起点的查询。`resource_query_operations` 表示已知资源 ID 或上下文后才适合执行的查询，覆盖统计会计入，但 `hcloud_resource_discovery.py` 不会默认把它们当作 list-only 操作执行。
+`hcloud_resource_query.py` 可执行 `resource_query_operations` 和需要显式目标参数的只读查询；缺少目标参数时会失败，不会替用户猜资源 ID。
 `change_operations` 中的非 ECS 项当前表示 `hcloud_service_change_plan.py` 可生成 planner-only 风险计划，不表示已经允许自动提交真实变更。
 `supported_cli_regions` / `preferred_cli_region` 用于记录 KooCLI 层面的区域限制；例如 CDN `ListDomains` 会从不支持的业务 region 自动落到 `cn-north-1` 执行只读 discovery。
 
@@ -70,11 +71,13 @@
 - 在 `services_en.json` 中可以看到这些 service
 - 本地 template cache 覆盖深度不一致；EIP / VPC 等可能只有 operation index，ELB / EVS / NAT / RDS 等当前只有 service 入口，缺少 per-operation detail
 - `hcloud_resource_discovery.py` 可以按 registry 为这些服务生成 list-only 查询命令，但真实执行仍依赖本机 hcloud metadata 和账号权限
+- `hcloud_resource_query.py` 可以为 EIP `ShowPublicip`、ELB `ListMembers`、RDS `ShowConfiguration`、CCE `ShowCluster/ListNodes`、CDN `ShowDomain` 等目标型只读查询生成可执行命令；`data.xlsx` 里的 RDS `ShowConfigurationDetail` 会被覆盖检查映射到 KooCLI 实际操作 `ShowConfiguration`
+- `hcloud_service_readiness.py` 可以按服务批量生成或执行只读 readiness 检查，并汇总资源数量和状态计数
 - `hcloud_readonly_smoke.py` 可以批量生成或执行多服务只读 smoke 查询
 - CDN `ListDomains` 已验证需要使用 KooCLI 支持区域；registry 会把 `cn-north-4` 调整到 `cn-north-1`
 - `hcloud_service_change_plan.py` 可以为多服务变更生成风险计划和验证建议，但不会执行 submit
 - `hcloud_resource_verify.py` 可以基于 JSON 查询结果验证 EIP、VPC、ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM 等资源状态
-- `check_question_coverage.py` 可用外部 `generated_questions` 和 `data-by-changping/data.xlsx` 回归验证 schema、CRUD type、风险分类、registry 覆盖和人工验证步骤风险线索
+- `check_question_coverage.py` 可用外部 `generated_questions` 和 `data-by-changping/data.xlsx` 回归验证 schema、CRUD type、风险分类、registry 覆盖、人工验证步骤风险线索和已注册验证 operation 的执行路径
 
 ## 对 agent 的实际意义
 
@@ -101,7 +104,8 @@
 当前只把 registry 当作查询线索：
 
 - 先确认本地 `hcloud <service> --help` 是否能拿到 operation 帮助
-- 优先执行 list/count 类低风险查询
+- 优先执行 list/count 类低风险查询；已知目标 ID 时可用 `hcloud_resource_query.py` 执行目标型 show/list 查询
+- 多服务现状检查优先用 `hcloud_service_readiness.py`，目标型检查缺参数时应明确 skipped，而不是猜测资源 ID
 - 涉及创建、绑定、扩容、停用、删除、证书部署、集群变更等动作时，先补专门 planner 和验证器
 
 不要伪装成已经有了和 ECS 一样完整的操作细节。

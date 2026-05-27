@@ -325,6 +325,42 @@ class ArchitectureContractsTest(unittest.TestCase):
         self.assertIn("ECS", result["operation_summary_by_service"])
         self.assertIn("VPC", result["operation_summary_by_service"])
         self.assertEqual(result["unregistered_operation_count"], 0)
+        self.assertEqual(result["execution_path_error_count"], 0)
+        self.assertIn("ECS:query:scripts/hcloud_resource_discovery.py", result["executable_validation_paths"])
+
+    def test_validation_workbook_tracks_resource_query_execution_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workbook = Path(tmp_dir) / "data.xlsx"
+            write_minimal_xlsx(
+                workbook,
+                [
+                    ["问题", "验证方法"],
+                    ["Check cluster.", "1. 调用 CCE 查询工具（ShowCluster）确认集群存在"],
+                    ["Check CDN.", "1. 调用 CDN 查询工具（ShowDomain）确认域名存在"],
+                    ["Check RDS config.", "1. 调用 RDS 查询工具（ShowConfigurationDetail）确认参数模板存在"],
+                ],
+            )
+
+            result = check_question_coverage.analyze_validation_workbook(workbook)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["execution_path_error_count"], 0)
+        self.assertEqual(
+            result["executable_validation_paths"]["CCE:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["CDN:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["RDS:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["operation_aliases_applied"]["RDS:ShowConfigurationDetail->ShowConfiguration"],
+            1,
+        )
 
     def test_run_journal_appends_and_summarizes_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

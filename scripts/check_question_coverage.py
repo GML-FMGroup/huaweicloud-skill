@@ -78,6 +78,7 @@ SIDE_EFFECT_VALIDATION_PATTERNS = [
 
 VALIDATION_OPERATION_ALIASES = {
     ("ECS", "ListServers"): "ListServersDetails",
+    ("RDS", "ShowConfigurationDetail"): "ShowConfiguration",
 }
 
 
@@ -111,6 +112,37 @@ def load_registry_operations(path: Path = REGISTRY_PATH) -> dict[str, set[str]]:
         service_ops.update(entry.get("change_operations", []))
         operations[service.upper()] = {normalize_operation(operation) for operation in service_ops}
     return operations
+
+
+def load_registry_execution_paths(path: Path = REGISTRY_PATH) -> dict[str, dict[str, dict[str, str]]]:
+    """Return executable script paths for registered operations."""
+    if not path.exists():
+        return {}
+    registry = load_json(path)
+    execution_paths: dict[str, dict[str, dict[str, str]]] = {}
+    for service, entry in registry.get("services", {}).items():
+        service_key = service.upper()
+        service_paths: dict[str, dict[str, str]] = {}
+        for operation in entry.get("query_operations", []):
+            service_paths[normalize_operation(operation)] = {
+                "operation": operation,
+                "scope": "query",
+                "runner": "scripts/hcloud_resource_discovery.py",
+            }
+        for operation in entry.get("resource_query_operations", []):
+            service_paths[normalize_operation(operation)] = {
+                "operation": operation,
+                "scope": "resource_query",
+                "runner": "scripts/hcloud_resource_query.py",
+            }
+        for operation in entry.get("change_operations", []):
+            service_paths[normalize_operation(operation)] = {
+                "operation": operation,
+                "scope": "planner_only_change",
+                "runner": entry.get("planner") or "missing_planner",
+            }
+        execution_paths[service_key] = service_paths
+    return execution_paths
 
 
 def load_registry_services(path: Path = REGISTRY_PATH) -> set[str]:
@@ -334,11 +366,14 @@ def analyze_validation_workbook(xlsx_path: Path, registry_path: Path = REGISTRY_
 
     registered_services = load_registry_services(registry_path)
     registry_operations = load_registry_operations(registry_path)
+    registry_execution_paths = load_registry_execution_paths(registry_path)
     schema_errors: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
     operation_counter: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
     unregistered_operations: list[dict[str, Any]] = []
     unregistered_services: collections.Counter[str] = collections.Counter()
+    executable_paths: collections.Counter[str] = collections.Counter()
+    execution_path_errors: list[dict[str, Any]] = []
     external_validation_refs: collections.Counter[str] = collections.Counter()
     side_effect_warnings: list[dict[str, Any]] = []
     operation_aliases_applied: collections.Counter[str] = collections.Counter()
@@ -386,7 +421,9 @@ def analyze_validation_workbook(xlsx_path: Path, registry_path: Path = REGISTRY_
                     operation_counter[service][operation] += 1
                     if service not in registered_services:
                         unregistered_services[service] += 1
-                    elif normalize_operation(canonical_operation) not in registry_operations.get(service, set()):
+                        continue
+                    normalized_operation = normalize_operation(canonical_operation)
+                    if normalized_operation not in registry_operations.get(service, set()):
                         unregistered_operations.append(
                             {
                                 "sheet": sheet_name,
@@ -397,6 +434,22 @@ def analyze_validation_workbook(xlsx_path: Path, registry_path: Path = REGISTRY_
                                 "canonical_operation": canonical_operation,
                             }
                         )
+                        continue
+                    execution_path = registry_execution_paths.get(service, {}).get(normalized_operation)
+                    if not execution_path or execution_path.get("runner") == "missing_planner":
+                        execution_path_errors.append(
+                            {
+                                "sheet": sheet_name,
+                                "row": row_index,
+                                "pair": pair_index,
+                                "service": service,
+                                "operation": operation,
+                                "canonical_operation": canonical_operation,
+                                "error": "Registered validation operation has no executable path.",
+                            }
+                        )
+                    else:
+                        executable_paths[f"{service}:{execution_path['scope']}:{execution_path['runner']}"] += 1
 
                 for pattern in EXTERNAL_VALIDATION_PATTERNS:
                     if pattern in validation:
@@ -422,7 +475,7 @@ def analyze_validation_workbook(xlsx_path: Path, registry_path: Path = REGISTRY_
                 )
 
     return {
-        "success": not schema_errors,
+        "success": not schema_errors and not execution_path_errors,
         "skipped": False,
         "xlsx_path": str(xlsx_path),
         "sheet_count": len(workbook),
@@ -434,6 +487,9 @@ def analyze_validation_workbook(xlsx_path: Path, registry_path: Path = REGISTRY_
         "unregistered_services": dict(sorted(unregistered_services.items())),
         "unregistered_operations_sample": unregistered_operations[:50],
         "unregistered_operation_count": len(unregistered_operations),
+        "execution_path_errors_sample": execution_path_errors[:50],
+        "execution_path_error_count": len(execution_path_errors),
+        "executable_validation_paths": dict(sorted(executable_paths.items())),
         "operation_aliases_applied": dict(sorted(operation_aliases_applied.items())),
         "external_validation_refs": dict(sorted(external_validation_refs.items())),
         "side_effect_warnings_sample": side_effect_warnings[:50],

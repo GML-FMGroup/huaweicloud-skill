@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,9 @@ def load_module(name: str, path: Path):
 
 
 hcloud_readonly_smoke = load_module("hcloud_readonly_smoke", SCRIPTS / "hcloud_readonly_smoke.py")
+hcloud_resource_query = load_module("hcloud_resource_query", SCRIPTS / "hcloud_resource_query.py")
 hcloud_resource_verify = load_module("hcloud_resource_verify", SCRIPTS / "hcloud_resource_verify.py")
+hcloud_service_readiness = load_module("hcloud_service_readiness", SCRIPTS / "hcloud_service_readiness.py")
 hcloud_service_change_plan = load_module("hcloud_service_change_plan", SCRIPTS / "hcloud_service_change_plan.py")
 
 
@@ -84,6 +87,209 @@ class MultiServiceToolsTest(unittest.TestCase):
         self.assertNotIn("--arg=--cli-region=cn-north-4", command_item["command"])
         self.assertEqual(command_item["region_resolution"]["requested_region"], "cn-north-4")
         self.assertEqual(command_item["region_resolution"]["resolved_region"], "cn-north-1")
+
+    def test_resource_query_builds_explicit_show_command(self) -> None:
+        args = SimpleNamespace(
+            service="EIP",
+            operation="ShowPublicip",
+            param=["publicip_id=eip-1"],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["operation_scope"], "resource_query")
+        self.assertIn("--arg=--publicip_id=eip-1", result["command"])
+        self.assertIn("--arg=--cli-output=json", result["command"])
+        self.assertIn("--expect-json", result["command"])
+
+    def test_resource_query_rejects_missing_required_param(self) -> None:
+        args = SimpleNamespace(
+            service="CCE",
+            operation="ShowCluster",
+            param=[],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["missing_params"], ["cluster_id"])
+
+    def test_resource_query_blocks_sensitive_read_by_default(self) -> None:
+        args = SimpleNamespace(
+            service="ECS",
+            operation="ShowServerPassword",
+            param=["server_id=server-1"],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertFalse(result["success"])
+        self.assertIn("Sensitive read", result["error"])
+
+    def test_resource_query_maps_rds_configuration_alias(self) -> None:
+        args = SimpleNamespace(
+            service="RDS",
+            operation="ShowConfigurationDetail",
+            param=["config_id=config-1"],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["requested_operation"], "ShowConfigurationDetail")
+        self.assertEqual(result["operation"], "ShowConfiguration")
+        self.assertIn("ShowConfiguration", result["command"])
+        self.assertIn("--arg=--config_id=config-1", result["command"])
+
+    def test_service_readiness_builds_vpc_profile(self) -> None:
+        args = SimpleNamespace(
+            service=["VPC"],
+            target=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+            timeout=1,
+            strict=True,
+            require_all=False,
+        )
+
+        result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertTrue(result["success"], result)
+        checks = result["services"][0]["checks"]
+        self.assertEqual({item["operation"] for item in checks}, {"ListVpcs", "ListSubnets", "ListSecurityGroups", "ListSecurityGroupRules", "ListVpcPeerings"})
+        self.assertTrue(all(item["runner"] == "scripts/hcloud_resource_discovery.py" for item in checks))
+
+    def test_service_readiness_skips_target_dependent_checks(self) -> None:
+        args = SimpleNamespace(
+            service=["ELB"],
+            target=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+            timeout=1,
+            strict=True,
+            require_all=False,
+        )
+
+        result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertTrue(result["success"], result)
+        skipped = [item for item in result["services"][0]["checks"] if item.get("skipped")]
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual(skipped[0]["operation"], "ListMembers")
+        self.assertEqual(skipped[0]["missing_targets"], ["pool_id"])
+
+    def test_service_readiness_uses_targets_for_member_checks(self) -> None:
+        args = SimpleNamespace(
+            service=["ELB"],
+            target=["pool_id=pool-1"],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+            timeout=1,
+            strict=True,
+            require_all=True,
+        )
+
+        result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertTrue(result["success"], result)
+        member_check = next(item for item in result["services"][0]["checks"] if item["operation"] == "ListMembers")
+        self.assertFalse(member_check["skipped"])
+        self.assertEqual(member_check["runner"], "scripts/hcloud_resource_query.py")
+        self.assertIn("--arg=--pool_id=pool-1", member_check["plan"]["command"])
+
+    def test_service_readiness_non_strict_execute_allows_execution_failures(self) -> None:
+        args = SimpleNamespace(
+            service=["VPC"],
+            target=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=True,
+            timeout=1,
+            strict=False,
+            require_all=False,
+        )
+
+        def fake_check(_args, service, _entry, check_spec, _targets):
+            return {
+                "service": service,
+                "operation": check_spec["operation"],
+                "stage": "execute",
+                "success": False,
+                "execution_success": False,
+                "skipped": False,
+            }
+
+        with patch.object(hcloud_service_readiness, "build_check", side_effect=fake_check):
+            result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["services"][0]["success"])
+
+    def test_service_readiness_non_strict_execute_keeps_plan_failures_blocking(self) -> None:
+        args = SimpleNamespace(
+            service=["VPC"],
+            target=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=True,
+            timeout=1,
+            strict=False,
+            require_all=False,
+        )
+
+        def fake_check(_args, service, _entry, check_spec, _targets):
+            operation = check_spec["operation"]
+            if operation == "ListSubnets":
+                return {"service": service, "operation": operation, "stage": "plan", "success": False, "skipped": False}
+            return {"service": service, "operation": operation, "stage": "execute", "success": False, "skipped": False}
+
+        with patch.object(hcloud_service_readiness, "build_check", side_effect=fake_check):
+            result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertFalse(result["success"])
+        self.assertFalse(result["services"][0]["success"])
 
     def test_resource_verify_accepts_eip_binding(self) -> None:
         payload = {
@@ -209,6 +415,20 @@ class MultiServiceToolsTest(unittest.TestCase):
         result = hcloud_resource_verify.verify_payload(args, payload)
 
         self.assertTrue(result["success"], result)
+
+    def test_resource_verify_collects_top_level_rds_configuration(self) -> None:
+        payload = {
+            "id": "config-1",
+            "name": "Default-PostgreSQL-11",
+            "configuration_parameters": [
+                {"name": "statement_timeout", "value": "0"},
+            ],
+        }
+
+        resources = hcloud_resource_verify.collect_dicts(payload, "RDS")
+
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0]["id"], "config-1")
 
     def test_service_change_plan_adds_service_hints(self) -> None:
         args = SimpleNamespace(

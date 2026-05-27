@@ -264,11 +264,13 @@
         "ListListeners",
         "ListLoadBalancers",
         "ListLoadbalancers",
-        "ListMembers",
         "ListPools",
         "ListQuotaDetails",
         "ListSecurityPolicies",
         "ListWhitelists"
+      ],
+      "resource_query_operations": [
+        "ListMembers"
       ],
       "change_operations": [
         "CreateLoadBalancer",
@@ -417,7 +419,6 @@
         "ShowAutoEnlargePolicy",
         "ShowBackupPolicy",
         "ShowConfiguration",
-        "ShowConfigurationDetail",
         "ShowDnsName",
         "ShowDomainName",
         "ShowInstanceConfiguration"
@@ -453,7 +454,9 @@
       "coverage": "low",
       "default_region_required": true,
       "query_operations": [
-        "ListClusters",
+        "ListClusters"
+      ],
+      "resource_query_operations": [
         "ListNodes",
         "ShowCluster"
       ],
@@ -479,7 +482,9 @@
       ],
       "preferred_cli_region": "cn-north-1",
       "query_operations": [
-        "ListDomains",
+        "ListDomains"
+      ],
+      "resource_query_operations": [
         "ShowDomain"
       ],
       "change_operations": [

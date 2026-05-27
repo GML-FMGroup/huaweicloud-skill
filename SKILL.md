@@ -300,7 +300,44 @@ python3 scripts/hcloud_resource_discovery.py \
 - 如果 registry 声明了 `supported_cli_regions`，脚本会把不支持的 `--region` 调整到 `preferred_cli_region`，例如 CDN discovery 使用 `cn-north-1`
 - 默认只生成计划；只有显式 `--execute` 才执行查询
 
-### 9. 通用变更风险计划
+### 9. 资源级只读查询
+
+```bash
+python3 scripts/hcloud_resource_query.py \
+  --service EIP \
+  --operation ShowPublicip \
+  --param publicip_id=<publicip-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 执行 registry 中的 `resource_query_operations`，以及需要显式参数的只读查询
+- 对 `Show*`、目标型 `List*` 等操作要求通过 `--param KEY=VALUE` 显式传资源 ID，不猜参数
+- 默认只生成计划；只有显式 `--execute` 才运行
+- 对 `ShowServerPassword`、证书私钥等敏感读操作默认拦截，必须显式 `--allow-sensitive-read`
+
+### 10. 服务 readiness 检查
+
+```bash
+python3 scripts/hcloud_service_readiness.py \
+  --service VPC \
+  --service ELB \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 按服务跑一组只读 readiness 检查，覆盖 VPC / EIP / ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES
+- 无目标参数时执行 list-only 检查；需要目标 ID 的检查会标记 skipped
+- 可用 `--target pool_id=<pool-id>`、`--target cluster_id=<cluster-id>` 等补充目标参数
+- 显式 `--execute` 时才运行真实只读查询，并返回资源数量和状态计数 summary
+
+### 11. 通用变更风险计划
 
 ```bash
 python3 scripts/hcloud_change_plan.py \
@@ -317,7 +354,7 @@ python3 scripts/hcloud_change_plan.py \
 - 生成 dry-run/submit 命令
 - 在真实执行前明确确认、费用、范围和验证要求
 
-### 10. 多服务只读 smoke
+### 12. 多服务只读 smoke
 
 ```bash
 python3 scripts/hcloud_readonly_smoke.py \
@@ -335,7 +372,7 @@ python3 scripts/hcloud_readonly_smoke.py \
 - 对 CDN 这类有固定 KooCLI 区域集合的服务，会沿用 discovery 的区域解析结果
 - 默认不把 live 查询失败当成脚本失败；需要严格失败门槛时加 `--strict`
 
-### 11. 服务级变更计划
+### 13. 服务级变更计划
 
 ```bash
 python3 scripts/hcloud_service_change_plan.py \
@@ -354,7 +391,7 @@ python3 scripts/hcloud_service_change_plan.py \
 - 对 registry 声明的 `supported_cli_regions` 同样生效，避免为 CDN 这类服务生成已知不可用的区域命令
 - 不执行真实变更；submit 命令必须单独获得用户确认后才可运行
 
-### 12. 多服务资源验收
+### 14. 多服务资源验收
 
 ```bash
 python3 scripts/hcloud_resource_verify.py \
@@ -374,7 +411,7 @@ python3 scripts/hcloud_resource_verify.py \
 - 对 ELB 等双状态资源，可用 `--expect-field operating_status=ONLINE` 检查特定字段
 - 只做验收判定，不访问云端；真实查询仍由 `hcloud_safe_exec.py` 或 discovery 脚本负责
 
-### 13. 离线问题集回归
+### 15. 离线问题集回归
 
 ```bash
 python3 scripts/check_question_coverage.py --pretty
@@ -386,6 +423,7 @@ python3 scripts/check_question_coverage.py --pretty
 - 用 `hcloud_change_plan.py` 回归验证读、改、删操作的风险分类
 - 汇总问题集中 operation 对 service registry 的覆盖情况
 - 如果 `data-by-changping/data.xlsx` 存在，也会检查人工 E2E 问题和验证方法，抽取验证步骤里的服务/operation，标出外部探测和带副作用的验证步骤
+- 对 Excel 验证集中的已注册 operation，会检查是否有执行路径：list-only 查询、显式资源查询或 planner-only 变更计划
 - 默认按 10% registry 覆盖率做最低门槛；可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整
 - 默认读取相邻项目的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`；单独使用本 skill 时可用 `--questions-dir` 指定路径
 
