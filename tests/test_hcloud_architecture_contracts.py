@@ -7,8 +7,10 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from xml.sax.saxutils import escape
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +28,52 @@ def load_module(name: str, path: Path):
     return module
 
 
+def write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
+    """Write a minimal inline-string XLSX workbook for parser contract tests."""
+    sheet_rows = []
+    for row_index, row in enumerate(rows, start=1):
+        cells = []
+        for column_index, value in enumerate(row):
+            ref = f"{chr(ord('A') + column_index)}{row_index}"
+            cells.append(
+                f'<c r="{ref}" t="inlineStr"><is><t>{escape(value)}</t></is></c>'
+            )
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            (
+                f'<workbook xmlns="{check_question_coverage.XLSX_MAIN_NS}" '
+                f'xmlns:r="{check_question_coverage.XLSX_REL_NS}">'
+                '<sheets><sheet name="v1" sheetId="1" r:id="rId1"/></sheets>'
+                "</workbook>"
+            ),
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            (
+                f'<Relationships xmlns="{check_question_coverage.PACKAGE_REL_NS}">'
+                '<Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+                'Target="worksheets/sheet1.xml"/>'
+                "</Relationships>"
+            ),
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            (
+                f'<worksheet xmlns="{check_question_coverage.XLSX_MAIN_NS}">'
+                f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+                "</worksheet>"
+            ),
+        )
+
+
 hcloud_change_plan = load_module("hcloud_change_plan", SCRIPTS / "hcloud_change_plan.py")
 hcloud_resource_discovery = load_module("hcloud_resource_discovery", SCRIPTS / "hcloud_resource_discovery.py")
 check_materials_drift = load_module("check_materials_drift", SCRIPTS / "check_materials_drift.py")
+check_question_coverage = load_module("check_question_coverage", SCRIPTS / "check_question_coverage.py")
 hcloud_run_journal = load_module("hcloud_run_journal", SCRIPTS / "hcloud_run_journal.py")
 
 
@@ -85,6 +130,40 @@ class ArchitectureContractsTest(unittest.TestCase):
 
         self.assertTrue(plan["success"])
         self.assertEqual(plan["commands"][0]["operation"], "ListKeypairs")
+        self.assertNotIn("--arg=--limit=20", plan["commands"][0]["command"])
+        self.assertEqual(plan["commands"][0]["omitted_args"], ["--limit"])
+
+    def test_resource_scoped_queries_are_not_generic_discovery_operations(self) -> None:
+        args = SimpleNamespace(
+            service="ECS",
+            operation="ShowServer",
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+        )
+
+        plan = hcloud_resource_discovery.build_plan(args)
+
+        self.assertFalse(plan["success"])
+        self.assertIn("not registered as list-only query", plan["error"])
+
+    def test_eip_discovery_is_registered_but_omits_unknown_limit(self) -> None:
+        args = SimpleNamespace(
+            service="EIP",
+            operation="ListPublicips",
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+        )
+
+        plan = hcloud_resource_discovery.build_plan(args)
+
+        self.assertTrue(plan["success"])
+        self.assertEqual(plan["commands"][0]["operation"], "ListPublicips")
         self.assertNotIn("--arg=--limit=20", plan["commands"][0]["command"])
         self.assertEqual(plan["commands"][0]["omitted_args"], ["--limit"])
 
@@ -165,6 +244,75 @@ class ArchitectureContractsTest(unittest.TestCase):
 
         for item in result["findings"]:
             self.assertEqual(item["missing"], [], item)
+
+    def test_question_coverage_accepts_safe_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            read_dir = root / "read_type"
+            crud_dir = root / "crud"
+            read_dir.mkdir()
+            crud_dir.mkdir()
+            (read_dir / "ecs.json").write_text(
+                json.dumps(
+                    [
+                        {"question": "List ECS instances.", "relevant_apis": ["listcloudservers"]},
+                        {"question": "Read initial password.", "relevant_apis": ["showserverpassword"]},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (crud_dir / "ecs_update.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "question": "Rename ECS.",
+                            "relevant_apis": ["ecs-BatchUpdateServersName", "ecs-ListServersDetails"],
+                            "type": "update",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (crud_dir / "ecs_delete.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "question": "Delete NICs.",
+                            "relevant_apis": ["ecs-BatchDeleteServerNics", "ecs-ListCloudServers"],
+                            "type": "delete",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = check_question_coverage.analyze_questions(root, xlsx_path=None)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["schema_errors"], [])
+        self.assertEqual(result["risk_errors"], [])
+        self.assertEqual(result["unique_risk_summary"]["high"], 2)
+
+    def test_validation_workbook_extracts_service_operations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workbook = Path(tmp_dir) / "data.xlsx"
+            write_minimal_xlsx(
+                workbook,
+                [
+                    ["问题", "验证方法"],
+                    ["Check ECS.", "1. 调用 ECS 查询工具（ListServersDetails）确认实例存在"],
+                    ["Check subnet.", "1. 调用子网查询工具（ListSubnets）确认子网存在"],
+                ],
+            )
+
+            result = check_question_coverage.analyze_validation_workbook(workbook)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["record_count"], 2)
+        self.assertEqual(result["schema_errors"], [])
+        self.assertIn("ECS", result["operation_summary_by_service"])
+        self.assertIn("VPC", result["operation_summary_by_service"])
+        self.assertEqual(result["unregistered_operation_count"], 0)
 
     def test_run_journal_appends_and_summarizes_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

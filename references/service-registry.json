@@ -5,9 +5,32 @@
       "coverage": "high",
       "default_region_required": true,
       "query_operations": [
+        "ListCloudServers",
         "ListServersDetails",
         "ListFlavors",
-        "ListFlavorSellPolicies"
+        "ListFlavorSellPolicies",
+        "ListLaunchTemplateVersions",
+        "ListRecycleBinServers",
+        "ListResizeFlavors",
+        "ListScheduledEvents",
+        "ListServerAzInfo",
+        "ListServerGroups",
+        "ListServerTags",
+        "ListTemplates"
+      ],
+      "resource_query_operations": [
+        "ListServerBlockDevices",
+        "ListServerInterfaces",
+        "ListServerVolumeAttachments",
+        "ShowJob",
+        "ShowResetPasswordFlag",
+        "ShowServer",
+        "ShowServerBlockDevice",
+        "ShowServerGroup",
+        "ShowServerLimits",
+        "ShowServerPassword",
+        "ShowServerRemoteConsole",
+        "ShowServerTags"
       ],
       "change_operations": [
         "CreateServers",
@@ -26,7 +49,8 @@
       ],
       "known_limits": [
         "ShowJob success is not full ECS completion; server ACTIVE verification is required.",
-        "Creation dependency discovery still relies on IAM, VPC, IMS, and KPS readiness paths."
+        "Creation dependency discovery still relies on IAM, VPC, IMS, and KPS readiness paths.",
+        "Resource-scoped list operations such as ListServerInterfaces require target IDs and are intentionally not generic discovery operations."
       ]
     },
     "IAM": {
@@ -53,9 +77,38 @@
       "coverage": "medium",
       "default_region_required": true,
       "query_operations": [
+        "CountFirewallsByTags",
+        "CountPortsByTags",
+        "ListAddressGroup",
+        "ListAddressGroupsDependency",
+        "ListApiVersion",
+        "ListFirewall",
+        "ListFirewallTags",
+        "ListFirewallsByTags",
+        "ListFlowLogs",
+        "ListPortTags",
+        "ListPorts",
+        "ListPortsByTags",
+        "ListPrivateips",
+        "ListRouteTables",
+        "ListSecurityGroupRules",
+        "ListSecurityGroupTags",
         "ListVpcs",
+        "ListVpcsByTags",
         "ListSubnets",
-        "ListSecurityGroups"
+        "ListSubnetsByTags",
+        "ListSecurityGroups",
+        "ListSecurityGroupsByTags",
+        "ListSubNetworkInterfaces",
+        "ListSubnetTags",
+        "ListTrafficMirrorFilterRules",
+        "ListTrafficMirrorFilters",
+        "ListTrafficMirrorSessions",
+        "ListVirsubnetCidrReservations",
+        "ListVirsubnets",
+        "ListVpcPeerings",
+        "ListVpcRoutes",
+        "ListVpcTags"
       ],
       "change_operations": [],
       "planner": null,
@@ -76,7 +129,11 @@
       "coverage": "medium",
       "default_region_required": true,
       "query_operations": [
-        "ListImages"
+        "ListImages",
+        "ListImagesTags",
+        "ListOsVersions",
+        "ListTags",
+        "ListVersions"
       ],
       "change_operations": [],
       "planner": null,
@@ -110,6 +167,304 @@
       ],
       "known_limits": [
         "Use ListKeypairs as keypair discovery support for ECS planning; key creation and private key handling need a dedicated risk gate."
+      ]
+    },
+    "EIP": {
+      "coverage": "medium",
+      "default_region_required": true,
+      "query_operations": [
+        "CountEipAvailableResources",
+        "CountPublicIp",
+        "CountPublicIpInstance",
+        "ListBandwidth",
+        "ListBandwidthPkg",
+        "ListBandwidthRuleV3",
+        "ListBandwidths",
+        "ListBandwidthsLimit",
+        "ListCommonPools",
+        "ListEipBandwidths",
+        "ListProjectGeipBindings",
+        "ListPublicipPool",
+        "ListPublicipPoolTypes",
+        "ListPublicipTags",
+        "ListPublicips",
+        "ListPublicipsByTags",
+        "ListQuotas",
+        "ListShareBandwidthTypes",
+        "ListTenantVpcIgws"
+      ],
+      "resource_query_operations": [
+        "NeutronShowFloatingIp",
+        "ShowBandwidth",
+        "ShowInternalVpcIgw",
+        "ShowPublicip",
+        "ShowPublicipPool",
+        "ShowPublicipTags",
+        "ShowPublicIpType",
+        "ShowResourcesJobDetail"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "EIP metadata in KooCLI may not include operation detail files, so generated discovery commands omit optional parameters unless metadata confirms support.",
+        "Create, bind, unbind, update, and delete operations are intentionally not registered as generic discovery operations."
+      ]
+    },
+    "ELB": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "CountPreoccupyIpNum",
+        "ListAllMembers",
+        "ListApiVersions",
+        "ListAvailabilityZones",
+        "ListCertificates",
+        "ListFeatureConfigs",
+        "ListFlavors",
+        "ListHealthMonitors",
+        "ListIpGroups",
+        "ListJobs",
+        "ListL7Policies",
+        "ListL7Rules",
+        "ListListeners",
+        "ListLoadBalancers",
+        "ListLoadbalancers",
+        "ListMembers",
+        "ListPools",
+        "ListQuotaDetails",
+        "ListSecurityPolicies",
+        "ListWhitelists"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the ELB service but no cached operation detail files.",
+        "Some validation references require load balancer, listener, pool, or member IDs; resolve required IDs before execution."
+      ]
+    },
+    "EVS": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "CinderListAvailabilityZones",
+        "CinderListQuotas",
+        "CinderListVolumeTransfers",
+        "CinderListVolumeTypes",
+        "ListSnapshots",
+        "ListVersions",
+        "ListVolumes",
+        "ListVolumesByTags",
+        "ListVolumeTags"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the EVS service but no cached operation detail files.",
+        "Volume attachment, resize, format, and delete flows remain outside generic read-only discovery."
+      ]
+    },
+    "NAT": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "ListNatGatewayByTag",
+        "ListNatGatewayDnatRules",
+        "ListNatGateways",
+        "ListNatGatewaysNatRules",
+        "ListNatGatewayTag",
+        "ListPrivateDnats",
+        "ListPrivateNats",
+        "ListPrivateNatsByTags",
+        "ListPrivateNatTags",
+        "ListPrivateSnats",
+        "ListTransitIps",
+        "ListTransitIpsByTags",
+        "ListTransitIpTags"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the NAT service but no cached operation detail files.",
+        "Create, bind, update, and delete NAT flows need a dedicated planner before being enabled."
+      ]
+    },
+    "RDS": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "DownloadErrorlog",
+        "DownloadSlowlog",
+        "ListApiVersionNew",
+        "ListAuditlogs",
+        "ListBackups",
+        "ListConfigurations",
+        "ListDatabases",
+        "ListDatastores",
+        "ListDbUsers",
+        "ListDrInfos",
+        "ListDrRelations",
+        "ListEngineFlavors",
+        "ListErrorLogs",
+        "ListFlavors",
+        "ListFlavorsResize",
+        "ListInstanceDiagnosis",
+        "ListInstances",
+        "ListInstanceTags",
+        "ListJobInfo",
+        "ListProjectTags",
+        "ListRecycleInstances",
+        "ListRestoreTimes",
+        "ListSlowLogFile",
+        "ListSlowLogs",
+        "ListSlowLogStatistics",
+        "ListStorageTypes",
+        "SearchQueryScaleComputeFlavors",
+        "SearchQueryScaleFlavors"
+      ],
+      "resource_query_operations": [
+        "ShowAuditlogPolicy",
+        "ShowAutoEnlargePolicy",
+        "ShowBackupPolicy",
+        "ShowConfiguration",
+        "ShowConfigurationDetail",
+        "ShowDnsName",
+        "ShowDomainName",
+        "ShowInstanceConfiguration"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the RDS service but no cached operation detail files.",
+        "Many RDS detail reads require instance IDs and engine-specific parameters; generic discovery should start from ListInstances."
+      ]
+    },
+    "CCE": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "ListClusters",
+        "ListNodes",
+        "ShowCluster"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the CCE service but no cached operation detail files.",
+        "Cluster creation, kubeconfig handling, and workload deployment are not covered by this skill yet."
+      ]
+    },
+    "CDN": {
+      "coverage": "low",
+      "default_region_required": false,
+      "query_operations": [
+        "ListDomains",
+        "ShowDomain"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the CDN service but no cached operation detail files.",
+        "CDN domain creation, certificate binding, and cache rule changes are not enabled as generic mutations."
+      ]
+    },
+    "DNS": {
+      "coverage": "low",
+      "default_region_required": false,
+      "query_operations": [
+        "ListPublicZones",
+        "ListRecordSets"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the DNS service but no cached operation detail files.",
+        "Record creation and deletion need explicit zone resolution and confirmation before mutation support."
+      ]
+    },
+    "SCM": {
+      "coverage": "low",
+      "default_region_required": false,
+      "query_operations": [
+        "ListCertificates"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the SCM service but no cached operation detail files.",
+        "Certificate application, issuance validation, and deployment are not covered as executable playbooks yet."
+      ]
+    },
+    "CES": {
+      "coverage": "low",
+      "default_region_required": true,
+      "query_operations": [
+        "ListMetrics"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Local KooCLI metadata currently finds the CES service but no cached operation detail files.",
+        "Metric dimensions and time ranges must be resolved from the target service before execution."
       ]
     }
   }

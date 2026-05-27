@@ -295,7 +295,8 @@ python3 scripts/hcloud_resource_discovery.py \
 用途：
 
 - 按 `references/service-registry.json` 生成 list-only 查询命令
-- 对 ECS / IAM / VPC / IMS / KPS 做创建前依赖发现
+- 对 ECS / IAM / VPC / IMS / KPS / EIP / ELB / EVS / NAT / RDS 等服务做创建前依赖发现
+- `resource_query_operations` 是已知资源 ID 后的查询线索，不会被通用 discovery 默认执行
 - 默认只生成计划；只有显式 `--execute` 才执行查询
 
 ### 9. 通用变更风险计划
@@ -314,6 +315,20 @@ python3 scripts/hcloud_change_plan.py \
 - 对 `Create*`、`Update*`、`Delete*`、`Bind*`、`Attach*` 等变更操作生成风险摘要
 - 生成 dry-run/submit 命令
 - 在真实执行前明确确认、费用、范围和验证要求
+
+### 10. 离线问题集回归
+
+```bash
+python3 scripts/check_question_coverage.py --pretty
+```
+
+用途：
+
+- 检查 `generated_questions` 的 JSON 结构和 CRUD `type` 标注
+- 用 `hcloud_change_plan.py` 回归验证读、改、删操作的风险分类
+- 汇总问题集中 operation 对 service registry 的覆盖情况
+- 如果 `data-by-changping/data.xlsx` 存在，也会检查人工 E2E 问题和验证方法，抽取验证步骤里的服务/operation，标出外部探测和带副作用的验证步骤
+- 默认读取相邻项目的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`；单独使用本 skill 时可用 `--questions-dir` 指定路径
 
 ## 默认执行规则
 
@@ -338,12 +353,13 @@ python3 scripts/hcloud_change_plan.py \
 - CLI 认证、区域、项目和缓存问题排查
 - ECS 查询与创建前准备
 - ECS 创建 JSON 本地校验、dry-run 命令生成、job 终态轮询和 ACTIVE 资源验证
-- service registry、只读资源发现、通用变更风险计划、run journal 和材料漂移检查
-- VPC / IMS / KPS / IAM 创建前只读发现方法
+- service registry、只读资源发现、通用变更风险计划、run journal、材料漂移检查和问题集回归检查
+- VPC / IMS / KPS / IAM / EIP 创建前只读发现方法
+- ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 的低覆盖查询登记，用于离线数据集回归和前置发现
 
-当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS 主要提供工作流和发现方法，不承诺已经沉淀了全量稳定 operation 清单。
+当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS、EIP 主要提供工作流和发现方法；对 ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM、CES 只提供低覆盖查询登记，不承诺已经沉淀了全量稳定 operation 清单。
 
-当前首版已经补了本地 meta cache 发现脚本和创建类示例模板，但 `VPC`、`IMS`、`KPS` 在当前机器上没有本地详细缓存，service 级动态发现也会受到网络限制。
+当前首版已经补了本地 meta cache 发现脚本和创建类示例模板；非 ECS 服务的 operation detail 缓存可能不完整，脚本会在缺少参数元数据时保守省略可选参数。
 
 ## 示例模板
 

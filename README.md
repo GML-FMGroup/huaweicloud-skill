@@ -39,8 +39,11 @@
 - VPC：VPC、子网、安全组、公网接入等网络依赖发现
 - IMS：镜像选择和 image id 发现路径
 - KPS：密钥对发现和 SSH 登录前检查
+- EIP：EIP、带宽、公网 IP 池、配额等 list/count 型发现入口
+- ELB / EVS / NAT / RDS：已登记常用只读 operation，适合做初步发现；本地缺少 operation detail 时会保守省略可选参数
+- CCE / CDN / DNS / SCM / CES：已按离线验证集登记最小查询入口，当前只作为低覆盖验证和发现线索
 
-这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。
+这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。`service-registry.json` 中的 `resource_query_operations` 只表示“已知资源 ID 后可查询”，不会被通用 discovery 默认执行。
 
 ## 在常用 Agent 中使用
 
@@ -157,6 +160,7 @@ huaweicloud-skill/
 │   ├── hcloud_change_plan.py        # 通用变更风险计划
 │   ├── hcloud_run_journal.py        # JSONL run journal
 │   ├── check_materials_drift.py     # references 与 materials 漂移检查
+│   ├── check_question_coverage.py   # generated_questions 和 data.xlsx 离线回归检查
 │   ├── hcloud_core.py               # 轻量共享数据结构
 │   ├── hcloud_ecs_create_plan.py   # ECS 创建 JSON 校验和命令生成
 │   ├── hcloud_ecs_wait_job.py      # ECS job 终态轮询
@@ -198,6 +202,16 @@ huaweicloud-skill/
     ├── test_hcloud_meta_lookup.py
     └── test_hcloud_safe_exec.py
 ```
+
+## 本地验证
+
+```bash
+python3 -m unittest discover tests
+python3 scripts/check_materials_drift.py --pretty
+python3 scripts/check_question_coverage.py --pretty
+```
+
+`check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。
 
 ## 前置条件
 
