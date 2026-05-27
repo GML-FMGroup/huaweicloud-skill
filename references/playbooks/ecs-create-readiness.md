@@ -92,7 +92,10 @@ python3 scripts/hcloud_ecs_create_plan.py \
 - `success=true`
 - `validation.errors` 为空
 - 没有 `<project_id>`、`<image_id>`、`<subnet_id>` 等占位符
+- 嵌入式占位符如 `ecs-<env>` 也必须清掉
+- `body.server.count` 默认不能超过保守上限 10；如果确实要更多实例，先确认费用、配额和回滚，再使用 `--allow-large-count`
 - 输出中生成了 `commands.safe_exec`
+- 输出中生成了 `commands.safe_exec_shell`，可人工复制执行
 
 如果 `validation.errors` 不为空，先修 JSON，不要进入 dry-run。
 
@@ -106,7 +109,9 @@ python3 scripts/hcloud_safe_exec.py \
   --operation CreateServers \
   --arg=--cli-region=cn-north-4 \
   --arg=--dryrun \
+  --arg=--cli-output=json \
   --json-input-file=<path-to-json> \
+  --expect-json \
   --pretty
 ```
 
@@ -133,10 +138,21 @@ python3 scripts/hcloud_ecs_wait_job.py \
   --job-id=<job-id> \
   --region=cn-north-4 \
   --project-id=<project-id> \
+  --server-id=<server-id-if-known> \
   --pretty
 ```
 
-只有 job 进入 `SUCCESS`，并且后续 `ShowServer` 或 `ListServersDetails` 能看到目标实例处于稳定状态，才可以说创建完成。
+`hcloud_ecs_wait_job.py` 只验证 job 终态，输出中会标记 `verification_scope=job_terminal_only`。只有 job 进入 `SUCCESS` 后，再用下面的资源验证确认目标实例 `ACTIVE`，才可以说 ECS 创建完成：
+
+```bash
+python3 scripts/hcloud_ecs_verify_active.py \
+  --server-id=<server-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+如果 submit 返回里暂时没有 server ID，可以先按资源名查，但同名资源可能不唯一；优先在 submit 结果或后续列表结果里拿到明确 ID。
 
 ## 还需要确认的外部依赖
 
@@ -187,6 +203,7 @@ python3 scripts/hcloud_ecs_create_plan.py \
 - 用哪个 image / keypair / subnet
 - 这是试运行还是真实创建
 - 如果是真实创建，返回的 `job_id` 是什么，以及用什么命令轮询到终态
+- 用什么命令确认 ECS 实例达到 `ACTIVE`
 
 ## 不要做的事
 

@@ -6,12 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
 
-PLACEHOLDER_PATTERN = re.compile(r"^<[^<>]+>$")
+PLACEHOLDER_PATTERN = re.compile(r"<[^<>]+>")
 ALLOWED_OPERATIONS = ("CreateServers", "CreatePostPaidServers")
+DEFAULT_SAFE_MAX_COUNT = 10
+API_MAX_COUNT = 100
 REQUIRED_PATHS: tuple[tuple[str | int, ...], ...] = (
     ("path", "project_id"),
     ("body", "server", "name"),
@@ -20,9 +23,7 @@ REQUIRED_PATHS: tuple[tuple[str | int, ...], ...] = (
     ("body", "server", "imageRef"),
     ("body", "server", "vpcid"),
     ("body", "server", "nics", 0, "subnet_id"),
-    ("body", "server", "security_groups", 0, "id"),
     ("body", "server", "root_volume", "volumetype"),
-    ("body", "server", "key_name"),
     ("body", "server", "count"),
 )
 
@@ -80,7 +81,7 @@ def find_placeholders(data: Any) -> list[dict[str, str]]:
     """Return unresolved placeholder string values in a JSON payload."""
     placeholders = []
     for path, value in iter_leaf_values(data):
-        if isinstance(value, str) and PLACEHOLDER_PATTERN.match(value.strip()):
+        if isinstance(value, str) and PLACEHOLDER_PATTERN.search(value.strip()):
             placeholders.append({"path": format_path(path), "value": value})
     return placeholders
 
@@ -90,7 +91,12 @@ def is_empty_value(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
-def validate_payload(data: Any, allow_placeholders: bool = False) -> dict[str, Any]:
+def validate_payload(
+    data: Any,
+    allow_placeholders: bool = False,
+    max_count: int = DEFAULT_SAFE_MAX_COUNT,
+    allow_large_count: bool = False,
+) -> dict[str, Any]:
     """Validate an ECS create cli-jsonInput payload without calling Huawei Cloud."""
     errors: list[str] = []
     warnings: list[str] = []
@@ -117,6 +123,28 @@ def validate_payload(data: Any, allow_placeholders: bool = False) -> dict[str, A
         errors.append("body.server.count must be an integer.")
     elif exists and count_value < 1:
         errors.append("body.server.count must be greater than 0.")
+    elif exists and count_value > API_MAX_COUNT:
+        errors.append(f"body.server.count must be less than or equal to {API_MAX_COUNT}.")
+    elif exists and count_value > max_count and not allow_large_count:
+        errors.append(
+            f"body.server.count exceeds conservative max {max_count}. "
+            "Use --allow-large-count only after confirming cost and quota impact."
+        )
+
+    key_exists, key_name = get_path_value(data, ("body", "server", "key_name"))
+    password_exists, admin_pass = get_path_value(data, ("body", "server", "adminPass"))
+    if (not key_exists or is_empty_value(key_name)) and (not password_exists or is_empty_value(admin_pass)):
+        warnings.append(
+            "No body.server.key_name or body.server.adminPass found. Creation may still be valid, "
+            "but login access should be verified before submit."
+        )
+
+    security_group_exists, security_group_id = get_path_value(data, ("body", "server", "security_groups", 0, "id"))
+    if not security_group_exists or is_empty_value(security_group_id):
+        warnings.append(
+            "No body.server.security_groups[0].id found. Huawei Cloud may bind the default security group, "
+            "but network exposure rules should be reviewed before submit."
+        )
 
     exists, data_volumes = get_path_value(data, ("body", "server", "data_volumes"))
     if exists:
@@ -168,7 +196,9 @@ def build_safe_exec_command(args: argparse.Namespace, json_input_file: Path) -> 
         command.append("--arg=--dryrun")
     command.extend(
         [
+            "--arg=--cli-output=json",
             f"--json-input-file={json_input_file}",
+            "--expect-json",
             "--pretty",
         ]
     )
@@ -225,7 +255,12 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
 
     try:
         payload = load_json(json_input_file)
-        validation = validate_payload(payload, allow_placeholders=args.allow_placeholders)
+        validation = validate_payload(
+            payload,
+            allow_placeholders=args.allow_placeholders,
+            max_count=getattr(args, "max_count", DEFAULT_SAFE_MAX_COUNT),
+            allow_large_count=getattr(args, "allow_large_count", False),
+        )
     except FileNotFoundError:
         validation = {
             "valid": False,
@@ -251,7 +286,9 @@ def build_result(args: argparse.Namespace) -> dict[str, Any]:
     ready_to_run = validation["valid"] and not validation["unresolved_placeholders"]
     commands = {
         "safe_exec": build_safe_exec_command(args, json_input_file),
+        "safe_exec_shell": shlex.join(build_safe_exec_command(args, json_input_file)),
         "hcloud": build_hcloud_command(args, json_input_file),
+        "hcloud_shell": shlex.join(build_hcloud_command(args, json_input_file)),
     } if ready_to_run else {}
 
     return {
@@ -294,8 +331,24 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow placeholder values such as <project_id> to remain in the JSON file.",
     )
+    parser.add_argument(
+        "--max-count",
+        type=int,
+        default=DEFAULT_SAFE_MAX_COUNT,
+        help=f"Conservative local count limit before --allow-large-count is required. Default: {DEFAULT_SAFE_MAX_COUNT}.",
+    )
+    parser.add_argument(
+        "--allow-large-count",
+        action="store_true",
+        help="Allow body.server.count above --max-count after confirming cost and quota impact.",
+    )
     parser.add_argument("--pretty", action="store_true", help="Pretty-print the JSON result.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.max_count < 1:
+        parser.error("--max-count must be at least 1.")
+    if args.max_count > API_MAX_COUNT:
+        parser.error(f"--max-count must be less than or equal to {API_MAX_COUNT}.")
+    return args
 
 
 def main() -> int:

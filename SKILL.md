@@ -1,7 +1,7 @@
 ---
 name: huaweicloud-skill
 description: 使用 hcloud 命令行工具执行华为云资源查询、分析、规划和变更。适用于用户明确要走 CLI/KooCLI 路线，或任务需要通过 hcloud 直接发现 service/operation、构造命令、执行查询或变更、排查认证、网络、缓存与输出格式问题的场景。
-version: "0.1.0"
+version: "0.2.0"
 ---
 
 # Huawei CLI Skill
@@ -100,11 +100,13 @@ version: "0.1.0"
 6. `references/command-construction.md`
 7. `references/error-playbook.md`
 8. `references/output-and-query.md`
-9. `references/playbooks/`
-10. `references/source-map.md`
-11. `examples/README.md`
+9. `references/service-registry.json`
+10. `references/playbooks/`
+11. `references/source-map.md`
+12. `examples/README.md`
 
 原始 KooCLI 材料在 `materials/` 下，仅作为资料源，不应直接当作最终指令集使用。
+华为云官方文档优先从 `https://support.huaweicloud.com/intl/zh-cn/` 查证；涉及 API 字段语义时，以官方文档和实际 `hcloud --dryrun`/查询结果为准。
 
 ## 默认工作流
 
@@ -123,7 +125,8 @@ version: "0.1.0"
    - 优先 `--skeleton`
    - 或使用 `--cli-jsonInput`
 5. 变更类先做预执行
-   - 默认先加 `--dryrun`
+   - 默认先用 `python3 scripts/hcloud_change_plan.py ...` 生成风险摘要和 dry-run/submit 命令
+   - 支持 dry-run 的操作默认先加 `--dryrun`
    - 复杂创建类优先先补齐依赖项，再进入真实执行
 6. 返回为空时显式校验
    - 为空不代表失败
@@ -178,7 +181,7 @@ python3 scripts/hcloud_safe_exec.py \
 
 - 统一执行 `hcloud`
 - 自动给出结构化 JSON 结果
-- 脱敏命令和输出中的密钥类信息
+- 脱敏命令、stdout/stderr、`parsed_json` 和 `--parsed-json-file` 中的密钥类信息
 - 识别常见错误类型
 
 对于 `configure` 一类系统命令，可改用：
@@ -203,6 +206,7 @@ python3 scripts/hcloud_meta_lookup.py --service=ECS --pretty
 - 看缓存了多少 operation
 - 看某个 operation 有没有详细参数元数据
 - 看本地缓存的 endpoint 和 region 信息
+- operation detail 文件优先按 JSON 解析；若是普通 YAML，环境有 PyYAML 时会尝试 YAML 解析，否则返回明确的 `yaml_unavailable`
 
 如果需要 operation 细节：
 
@@ -227,8 +231,9 @@ python3 scripts/hcloud_ecs_create_plan.py \
 用途：
 
 - 校验 ECS 创建 JSON 是否还包含 `<project_id>` 等占位符
-- 检查关键字段是否缺失或为空
-- 生成推荐的 `hcloud_safe_exec.py` dry-run 命令
+- 检查关键字段是否缺失或为空；嵌入式占位符如 `ecs-<env>` 也会拦截
+- 默认把 `count` 限制在保守上限 10；更大数量需要 `--allow-large-count`
+- 生成 JSON-friendly 的 `hcloud_safe_exec.py` dry-run 命令和可复制 shell 命令
 - 防止在依赖未确认时直接进入真实创建
 
 如果 dry-run 已通过，并且用户明确确认真实创建，再生成非 dry-run 命令：
@@ -257,7 +262,58 @@ python3 scripts/hcloud_ecs_wait_job.py \
 
 - 对 `CreateServers`、`CreatePostPaidServers` 等返回的 `job_id` 调用 `ECS ShowJob`
 - 持续轮询直到 `SUCCESS`、`FAILED`、`ERROR` 等终态
-- 避免只看到请求提交就误报资源创建完成
+- 输出 `verification_scope=job_terminal_only`，避免把 job 成功误报成 ECS 可用
+
+### 7. ECS ACTIVE 资源验证
+
+```bash
+python3 scripts/hcloud_ecs_verify_active.py \
+  --server-id=<server-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 在 `ShowJob SUCCESS` 后确认目标 ECS 存在
+- 轮询 `ListServersDetails`，直到目标实例状态为 `ACTIVE`
+- 支持按 `--server-id` 或 `--server-name` 验证
+
+### 8. 只读资源发现
+
+```bash
+python3 scripts/hcloud_resource_discovery.py \
+  --service ECS \
+  --operation ListServersDetails \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --limit=50 \
+  --pretty
+```
+
+用途：
+
+- 按 `references/service-registry.json` 生成 list-only 查询命令
+- 对 ECS / IAM / VPC / IMS / KPS 做创建前依赖发现
+- 默认只生成计划；只有显式 `--execute` 才执行查询
+
+### 9. 通用变更风险计划
+
+```bash
+python3 scripts/hcloud_change_plan.py \
+  --service ECS \
+  --operation CreateServers \
+  --region=cn-north-4 \
+  --json-input-file=<path-to-json> \
+  --pretty
+```
+
+用途：
+
+- 对 `Create*`、`Update*`、`Delete*`、`Bind*`、`Attach*` 等变更操作生成风险摘要
+- 生成 dry-run/submit 命令
+- 在真实执行前明确确认、费用、范围和验证要求
 
 ## 默认执行规则
 
@@ -267,8 +323,8 @@ python3 scripts/hcloud_ecs_wait_job.py \
 - 查询类默认走 JSON 输出，不默认走 table。
 - 复杂 body 优先 `--cli-jsonInput`，不要手工拼几百字符命令。
 - ECS 创建类 JSON 先用 `hcloud_ecs_create_plan.py` 检查占位符和关键字段。
-- 变更类默认先查证据，再 `--dryrun`，再执行。
-- ECS 创建类真实提交后，必须用 `hcloud_ecs_wait_job.py` 或等价 `ShowJob` 查询跟到终态。
+- 变更类默认先查证据，再用 `hcloud_change_plan.py` 生成风险计划，再 `--dryrun`，再执行。
+- ECS 创建类真实提交后，必须先用 `hcloud_ecs_wait_job.py` 或等价 `ShowJob` 查询 job 终态，再用 `hcloud_ecs_verify_active.py` 或等价查询确认目标实例 `ACTIVE`。
 - `--cli-waiter` 有重复调用风险，默认只建议用于查询或状态轮询。
 - 如果 live help 因网络或元数据问题失败，改走本地 meta cache 和 `references/`，不要瞎猜参数。
 
@@ -281,8 +337,9 @@ python3 scripts/hcloud_ecs_wait_job.py \
 - `hcloud` 命令发现与构造
 - CLI 认证、区域、项目和缓存问题排查
 - ECS 查询与创建前准备
-- ECS 创建 JSON 本地校验、dry-run 命令生成和 job 终态轮询
-- VPC 网络前置检查方法
+- ECS 创建 JSON 本地校验、dry-run 命令生成、job 终态轮询和 ACTIVE 资源验证
+- service registry、只读资源发现、通用变更风险计划、run journal 和材料漂移检查
+- VPC / IMS / KPS / IAM 创建前只读发现方法
 
 当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS 主要提供工作流和发现方法，不承诺已经沉淀了全量稳定 operation 清单。
 
@@ -310,4 +367,4 @@ python3 scripts/hcloud_ecs_wait_job.py \
 - 不要在未确认上下文前直接执行高风险删除或不可逆变更。
 - 不要把真实 AK/SK、token、密码写进文档、日志或最终回复。
 - 不要把表格输出当成机器可稳定解析的默认格式。
-- 不要在同一个任务里同时混用 CLI 路线和 MCP 路线，除非用户明确要求。
+- 本 skill 负责 CLI/KooCLI 路线；Terraform、MCP、IaC 等路线只在用户明确要求或项目路由规则指定时接管。

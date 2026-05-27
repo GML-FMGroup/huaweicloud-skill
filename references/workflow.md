@@ -35,10 +35,11 @@ python3 scripts/hcloud_context_inspect.py --pretty
 
 标准顺序：
 
-1. `python3 scripts/hcloud_meta_lookup.py --service=<service> --pretty`
-2. `hcloud --help`
-3. `hcloud <service> --help`
-4. `hcloud <service> <operation> --help`
+1. 查看 `references/service-registry.json`，确认当前 service 的覆盖等级、playbook、planner/verifier 和已知限制
+2. `python3 scripts/hcloud_meta_lookup.py --service=<service> --pretty`
+3. `hcloud --help`
+4. `hcloud <service> --help`
+5. `hcloud <service> <operation> --help`
 
 原则：
 
@@ -56,10 +57,12 @@ python3 scripts/hcloud_context_inspect.py --pretty
   - 加 `limit`
   - 加过滤参数
   - 加 `--cli-query`
+- 对 registry 中已有的 list-only 操作，可以先用 `python3 scripts/hcloud_resource_discovery.py --service=<service> ... --pretty` 生成命令，再决定是否 `--execute`
 
 ### 变更类默认规则
 
-- 默认先 `--dryrun`
+- 默认先用 `python3 scripts/hcloud_change_plan.py ... --pretty` 生成风险摘要
+- 支持 dry-run 时先 `--dryrun`
 - 优先把复杂 body 放进 `--cli-jsonInput`
 - 真执行前先补齐：
   - region
@@ -94,6 +97,22 @@ python3 scripts/hcloud_safe_exec.py ...
   - 查看状态码
 - 长任务：
   - 谨慎考虑 `--cli-waiter`
+- 异步 job：
+  - 先验证 job 终态
+  - 再验证资源终态，例如 ECS 还要用 `hcloud_ecs_verify_active.py` 确认目标实例 `ACTIVE`
+
+## Phase G: Record When Needed
+
+多步真实操作建议写 run journal：
+
+```bash
+python3 scripts/hcloud_run_journal.py \
+  --journal=<path-to-jsonl> \
+  --append-json='{"type":"command","success":true}' \
+  --pretty
+```
+
+run journal 用于审计和断点恢复，不应写入 AK/SK、token、密码等敏感信息。
 
 ## 三层回退策略
 

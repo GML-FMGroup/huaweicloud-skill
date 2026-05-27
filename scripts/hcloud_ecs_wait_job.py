@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -63,8 +62,8 @@ def build_show_job_command(args: argparse.Namespace) -> list[str]:
     """Build the hcloud_safe_exec.py command used for one ShowJob poll."""
     script_path = Path(__file__).with_name("hcloud_safe_exec.py")
     command = [
-        sys.executable,
-        str(script_path),
+        "python3",
+        str(Path("scripts") / script_path.name),
         "--service",
         "ECS",
         "--operation",
@@ -117,11 +116,47 @@ def compact_attempt(index: int, exec_result: dict[str, Any], status: str | None,
     }
 
 
+def build_resource_verification(args: argparse.Namespace) -> dict[str, Any]:
+    """Return follow-up guidance for ECS resource state verification."""
+    verifier_path = Path(__file__).with_name("hcloud_ecs_verify_active.py")
+    followup_command = [
+        "python3",
+        str(Path("scripts") / verifier_path.name),
+    ]
+    for server_id in args.server_id:
+        followup_command.append(f"--server-id={server_id}")
+    for server_name in args.server_name:
+        followup_command.append(f"--server-name={server_name}")
+    if args.profile:
+        followup_command.append(f"--profile={args.profile}")
+    if args.region:
+        followup_command.append(f"--region={args.region}")
+    if args.project_id:
+        followup_command.append(f"--project-id={args.project_id}")
+
+    return {
+        "required_for_create_completion": True,
+        "performed": False,
+        "reason": "This script only verifies the ECS async job terminal status, not target server ACTIVE state.",
+        "recommended_followup_command": followup_command,
+        "has_targets": bool(args.server_id or args.server_name),
+    }
+
+
+def base_result(args: argparse.Namespace) -> dict[str, Any]:
+    """Return common output fields for the ECS job waiter."""
+    return {
+        "verification_scope": "job_terminal_only",
+        "resource_verification": build_resource_verification(args),
+    }
+
+
 def wait_for_job(args: argparse.Namespace) -> dict[str, Any]:
     """Poll ECS ShowJob until success, failure, or timeout."""
     command = build_show_job_command(args)
     if args.print_command_only:
         return {
+            **base_result(args),
             "success": True,
             "mode": "print_command_only",
             "command": command,
@@ -150,6 +185,7 @@ def wait_for_job(args: argparse.Namespace) -> dict[str, Any]:
 
         if classification == "success":
             return {
+                **base_result(args),
                 "success": True,
                 "mode": "poll",
                 "command": command,
@@ -160,6 +196,7 @@ def wait_for_job(args: argparse.Namespace) -> dict[str, Any]:
             }
         if classification == "failure":
             return {
+                **base_result(args),
                 "success": False,
                 "mode": "poll",
                 "command": command,
@@ -170,6 +207,7 @@ def wait_for_job(args: argparse.Namespace) -> dict[str, Any]:
             }
         if consecutive_failures >= args.max_command_failures:
             return {
+                **base_result(args),
                 "success": False,
                 "mode": "poll",
                 "command": command,
@@ -180,6 +218,7 @@ def wait_for_job(args: argparse.Namespace) -> dict[str, Any]:
             }
         if time.time() >= deadline:
             return {
+                **base_result(args),
                 "success": False,
                 "mode": "poll",
                 "command": command,
@@ -198,6 +237,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--region", help="Explicit cli-region used for ShowJob.")
     parser.add_argument("--project-id", help="Optional project_id passed to ShowJob.")
     parser.add_argument("--profile", help="Optional cli-profile passed to ShowJob.")
+    parser.add_argument("--server-id", action="append", default=[], help="Target ECS server ID for follow-up ACTIVE verification.")
+    parser.add_argument("--server-name", action="append", default=[], help="Target ECS server name for follow-up ACTIVE verification.")
     parser.add_argument("--interval", type=float, default=10.0, help="Seconds between ShowJob polls.")
     parser.add_argument("--timeout", type=float, default=600.0, help="Maximum total polling time in seconds.")
     parser.add_argument("--command-timeout", type=int, default=120, help="Timeout for each hcloud_safe_exec.py call.")

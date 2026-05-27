@@ -13,13 +13,15 @@
 
 ## 当前覆盖矩阵
 
+机器可读版本见 `references/service-registry.json`。后续自动化脚本应优先消费 registry，本文件保留人类可读说明。
+
 | Service | Coverage | 当前状态 | 说明 |
 |---------|----------|----------|------|
-| `ECS` | High | 最完整 | 本地有 `apis_en.json`、部分 operation detail cache，已验证 `ListFlavors` 的 meta lookup、dry-run、本地参数校验；新增创建 JSON 校验和 ShowJob 轮询脚本 |
+| `ECS` | High | 最完整 | 本地有 `apis_en.json`、部分 operation detail cache，已验证 `ListFlavors` 的 meta lookup、dry-run、本地参数校验；已有创建 JSON 校验、ShowJob 轮询和 ACTIVE 资源验证脚本 |
 | `IAM` | Medium | 可做上下文和 endpoint 发现 | 当前机器仅有 endpoint cache，operation 级 detail 仍不完整 |
-| `VPC` | Medium | 有 workflow 和 playbook | 当前机器无本地 template cache，service help fallback 会受网络限制 |
-| `IMS` | Medium | 有 workflow 和 playbook | 当前机器无本地 template cache，适合作为镜像发现方法论入口 |
-| `KPS` | Medium | 有 workflow 和 playbook | 当前机器无本地 template cache，适合作为密钥对发现方法论入口 |
+| `VPC` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 当前机器无本地 template cache，service help fallback 会受网络限制 |
+| `IMS` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 当前机器无本地 template cache，适合作为镜像发现方法论入口 |
+| `KPS` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 当前机器无本地 template cache，适合作为密钥对发现方法论入口 |
 
 ## 已实测能力
 
@@ -32,6 +34,8 @@
 - `hcloud_safe_exec.py` 包装查询和错误分类
 - `hcloud_ecs_create_plan.py` 本地校验 ECS 创建 JSON 并生成 dry-run / submit 命令
 - `hcloud_ecs_wait_job.py --print-command-only` 生成 `ShowJob` 轮询命令
+- `hcloud_ecs_verify_active.py --print-command-only` 生成 `ListServersDetails` ACTIVE 验证命令
+- `hcloud_change_plan.py` 为变更操作生成风险摘要和 dry-run/submit 命令
 
 ### 非 ECS
 
@@ -46,6 +50,7 @@
 - 在 `services_en.json` 中可以看到这些 service
 - 当前机器没有对应的本地 template cache
 - `--allow-help-fallback` 仍会命中 `APIE_ERROR`
+- `hcloud_resource_discovery.py` 可以按 registry 为这些服务生成 list-only 查询命令，但真实执行仍依赖本机 hcloud metadata 和账号权限
 
 ## 对 agent 的实际意义
 

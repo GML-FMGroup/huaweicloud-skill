@@ -13,7 +13,28 @@ from pathlib import Path
 from typing import Any
 
 
-SECRET_HINTS = ("access-key", "secret-key", "security-token", "x-auth-token", "password")
+SECRET_HINTS = (
+    "access-key",
+    "accesskey",
+    "secret-key",
+    "secretaccesskey",
+    "security-token",
+    "securitytoken",
+    "x-auth-token",
+    "auth-token",
+    "token",
+    "credential",
+    "credentials",
+    "password",
+    "passwd",
+    "adminpass",
+    "private-key",
+    "private_key",
+    "privatekey",
+    "user-data",
+    "user_data",
+    "userdata",
+)
 ERROR_TYPES = ("USE_ERROR", "NETWORK_ERROR", "OPENAPI_ERROR", "APIE_ERROR")
 
 
@@ -58,9 +79,45 @@ def looks_like_secret_arg(arg: str) -> bool:
 def collect_inline_secrets(args: list[str]) -> set[str]:
     """Collect secret values directly passed via CLI arguments."""
     secrets: set[str] = set()
-    for arg in args:
+    for index, arg in enumerate(args):
         if "=" in arg and looks_like_secret_arg(arg.split("=", 1)[0]):
             secrets.add(arg.split("=", 1)[1])
+            continue
+        if looks_like_secret_arg(arg) and index + 1 < len(args):
+            next_arg = args[index + 1]
+            if next_arg and not next_arg.startswith("-"):
+                secrets.add(next_arg)
+    return secrets
+
+
+def collect_json_secrets(value: Any) -> set[str]:
+    """Collect sensitive scalar values from a JSON-like object."""
+    secrets: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if looks_like_secret_arg(str(key)):
+                if isinstance(child, str) and child:
+                    secrets.add(child)
+                elif isinstance(child, (int, float, bool)):
+                    secrets.add(str(child))
+                continue
+            secrets.update(collect_json_secrets(child))
+    elif isinstance(value, list):
+        for child in value:
+            secrets.update(collect_json_secrets(child))
+    return secrets
+
+
+def collect_json_input_secrets(args: argparse.Namespace) -> set[str]:
+    """Collect secrets embedded in JSON input text or files when parseable."""
+    secrets: set[str] = set()
+    try:
+        if args.json_input_file:
+            secrets.update(collect_json_secrets(load_json(Path(args.json_input_file))))
+        if args.json_input_text:
+            secrets.update(collect_json_secrets(json.loads(args.json_input_text)))
+    except (OSError, json.JSONDecodeError):
+        return secrets
     return secrets
 
 
@@ -84,13 +141,34 @@ def redact_text(text: str | bytes | None, secrets: set[str]) -> str:
 def redact_command(command: list[str], secrets: set[str]) -> list[str]:
     """Return a redacted command list."""
     redacted: list[str] = []
+    redact_next = False
     for item in command:
+        if redact_next:
+            redacted.append(item if item.startswith("-") else "***")
+            redact_next = False
+            continue
         if "=" in item and looks_like_secret_arg(item.split("=", 1)[0]):
             key = item.split("=", 1)[0]
             redacted.append(f"{key}=***")
+        elif looks_like_secret_arg(item):
+            redacted.append(item)
+            redact_next = True
         else:
             redacted.append(redact_text(item, secrets))
     return redacted
+
+
+def redact_json(value: Any, secrets: set[str], key: str | None = None) -> Any:
+    """Recursively redact sensitive values in parsed JSON-like data."""
+    if key is not None and looks_like_secret_arg(key):
+        return "***"
+    if isinstance(value, dict):
+        return {item_key: redact_json(child, secrets, str(item_key)) for item_key, child in value.items()}
+    if isinstance(value, list):
+        return [redact_json(child, secrets) for child in value]
+    if isinstance(value, str):
+        return redact_text(value, secrets)
+    return value
 
 
 def classify_error(stdout: str, stderr: str) -> str | None:
@@ -218,7 +296,8 @@ def main() -> int:
         temp_json_file = Path(temp.name)
 
     known_secrets = collect_known_secrets()
-    known_secrets.update(collect_inline_secrets(args.arg))
+    known_secrets.update(collect_inline_secrets(args.arg + args.command_part))
+    known_secrets.update(collect_json_input_secrets(args))
 
     started_at = time.time()
     try:
@@ -238,6 +317,8 @@ def main() -> int:
         parsed_json_error = None
         if args.expect_json:
             parsed_json, parsed_json_error = maybe_parse_json(raw_stdout)
+            if parsed_json is not None:
+                known_secrets.update(collect_json_secrets(parsed_json))
 
         redacted_stdout = redact_text(raw_stdout, known_secrets)
         redacted_stderr = redact_text(raw_stderr, known_secrets)
@@ -259,7 +340,7 @@ def main() -> int:
             "stderr_truncated": stderr_truncated,
             "error_type": error_type,
             "advice": advice_for_error(error_type),
-            "parsed_json": parsed_json,
+            "parsed_json": redact_json(parsed_json, known_secrets) if parsed_json is not None else None,
             "parsed_json_error": parsed_json_error,
             "config_context": {
                 "cwd": args.cwd,

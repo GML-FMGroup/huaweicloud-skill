@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Build or run list-only discovery commands from the service registry."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from hcloud_meta_lookup import collect_template_dirs, load_operation_detail, normalize_token
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REGISTRY_PATH = ROOT / "references" / "service-registry.json"
+
+
+def load_registry(path: Path = REGISTRY_PATH) -> dict[str, Any]:
+    """Return the machine-readable service registry."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def operation_param_names(service: str, operation: str) -> set[str]:
+    """Return known hcloud parameter names for an operation from local metadata."""
+    meta_repo = Path.home() / ".hcloud" / "metaRepo"
+    template_dir = collect_template_dirs(meta_repo).get(normalize_token(service))
+    detail = load_operation_detail(template_dir, operation)
+    if not isinstance(detail, dict):
+        return set()
+
+    names: set[str] = set()
+    for param in detail.get("params", []):
+        for name in param.get("name", []):
+            names.add(str(name).lower())
+    return names
+
+
+def build_safe_exec_command(
+    args: argparse.Namespace,
+    service: str,
+    operation: str,
+    param_names: set[str],
+) -> tuple[list[str], list[str]]:
+    """Build a JSON-friendly safe_exec command for one list-only operation."""
+    command = [
+        "python3",
+        "scripts/hcloud_safe_exec.py",
+        "--service",
+        service,
+        "--operation",
+        operation,
+        "--arg=--cli-output=json",
+        "--expect-json",
+    ]
+    if args.profile:
+        command.append(f"--arg=--cli-profile={args.profile}")
+    if args.region:
+        command.append(f"--arg=--cli-region={args.region}")
+    if args.project_id:
+        command.append(f"--arg=--project_id={args.project_id}")
+    omitted_args: list[str] = []
+    if args.limit is not None:
+        if "limit" in param_names:
+            command.append(f"--arg=--limit={args.limit}")
+        else:
+            omitted_args.append("--limit")
+    return command, omitted_args
+
+
+def build_command_item(args: argparse.Namespace, service: str, operation: str) -> dict[str, Any]:
+    """Build one discovery command item with metadata-driven optional arguments."""
+    command, omitted_args = build_safe_exec_command(args, service, operation, operation_param_names(service, operation))
+    item: dict[str, Any] = {
+        "service": service,
+        "operation": operation,
+        "command": command,
+    }
+    if omitted_args:
+        item["omitted_args"] = omitted_args
+        item["omitted_reason"] = "Operation metadata does not list these parameters."
+    return item
+
+
+def build_plan(args: argparse.Namespace) -> dict[str, Any]:
+    """Build list-only discovery commands without mutating cloud resources."""
+    registry = load_registry()
+    service = args.service.upper()
+    service_entry = registry["services"].get(service)
+    if service_entry is None:
+        return {
+            "success": False,
+            "service": service,
+            "error": f"Service is not registered: {service}",
+            "available_services": sorted(registry["services"]),
+        }
+
+    operations = service_entry.get("query_operations", [])
+    if args.operation:
+        if args.operation not in operations:
+            return {
+                "success": False,
+                "service": service,
+                "operation": args.operation,
+                "error": f"Operation is not registered as list-only query for {service}: {args.operation}",
+                "available_query_operations": operations,
+            }
+        operations = [args.operation]
+
+    commands = [build_command_item(args, service, operation) for operation in operations]
+    return {
+        "success": True,
+        "mode": "execute" if args.execute else "plan",
+        "service": service,
+        "coverage": service_entry.get("coverage"),
+        "known_limits": service_entry.get("known_limits", []),
+        "playbooks": service_entry.get("playbooks", []),
+        "commands": commands,
+    }
+
+
+def execute_plan(plan: dict[str, Any], timeout: int) -> dict[str, Any]:
+    """Run discovery commands and attach structured results."""
+    results = []
+    for item in plan.get("commands", []):
+        completed = subprocess.run(
+            item["command"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+        try:
+            result = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            result = {
+                "success": False,
+                "return_code": completed.returncode,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+                "parsed_json": None,
+                "parsed_json_error": "hcloud_safe_exec.py did not return valid JSON.",
+            }
+        results.append(
+            {
+                "service": item["service"],
+                "operation": item["operation"],
+                "result": result,
+            }
+        )
+    plan = dict(plan)
+    plan["results"] = results
+    plan["success"] = all(item["result"].get("success") for item in results)
+    return plan
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--service", required=True, help="Registered service name, for example ECS, VPC, IMS, KPS, IAM.")
+    parser.add_argument("--operation", help="Optional registered list-only operation to run.")
+    parser.add_argument("--region", help="Explicit cli-region for generated commands.")
+    parser.add_argument("--project-id", help="Optional project_id for generated commands.")
+    parser.add_argument("--profile", help="Optional cli-profile for generated commands.")
+    parser.add_argument("--limit", type=int, help="Optional limit parameter for list operations that support it.")
+    parser.add_argument("--execute", action="store_true", help="Run the generated safe_exec commands.")
+    parser.add_argument("--timeout", type=int, default=120, help="Timeout per executed command.")
+    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output.")
+    args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be greater than 0.")
+    if args.timeout < 1:
+        parser.error("--timeout must be greater than 0.")
+    return args
+
+
+def main() -> int:
+    """Build or run list-only discovery commands."""
+    args = parse_args()
+    result = build_plan(args)
+    if result["success"] and args.execute:
+        result = execute_plan(result, args.timeout)
+    if args.pretty:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["success"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

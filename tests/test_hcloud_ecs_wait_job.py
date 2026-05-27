@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,26 @@ class EcsWaitJobTest(unittest.TestCase):
         self.assertEqual(hcloud_ecs_wait_job.classify_status("FAILED"), "failure")
         self.assertEqual(hcloud_ecs_wait_job.classify_status("RUNNING"), "running")
         self.assertEqual(hcloud_ecs_wait_job.classify_status("QUEUED"), "unknown")
+
+    def test_print_command_result_marks_job_only_verification_scope(self) -> None:
+        args = SimpleNamespace(
+            job_id="job-1",
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            server_id=["server-1"],
+            server_name=[],
+            print_command_only=True,
+        )
+
+        result = hcloud_ecs_wait_job.wait_for_job(args)
+
+        self.assertEqual(result["verification_scope"], "job_terminal_only")
+        self.assertFalse(result["resource_verification"]["performed"])
+        self.assertTrue(result["resource_verification"]["required_for_create_completion"])
+        self.assertTrue(result["resource_verification"]["has_targets"])
+        self.assertIn("hcloud_ecs_verify_active.py", result["resource_verification"]["recommended_followup_command"][1])
+        self.assertIn("--server-id=server-1", result["resource_verification"]["recommended_followup_command"])
 
 
 if __name__ == "__main__":

@@ -17,6 +17,23 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_structured_detail(path: Path) -> tuple[Any | None, str, str | None]:
+    """Load a metadata detail file as JSON first, then YAML when PyYAML is available."""
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text), "json", None
+    except json.JSONDecodeError as json_exc:
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ModuleNotFoundError:
+            return None, "yaml_unavailable", f"JSON parse failed and PyYAML is not installed: {json_exc}"
+
+        try:
+            return yaml.safe_load(text), "yaml", None
+        except Exception as yaml_exc:  # pragma: no cover - exact PyYAML exception classes vary.
+            return None, "unparsed", f"Could not parse as JSON or YAML: {yaml_exc}"
+
+
 def normalize_token(value: str) -> str:
     """Return a lowercase alphanumeric-only token for loose matching."""
     return re.sub(r"[^a-z0-9]", "", value.lower())
@@ -111,19 +128,19 @@ def load_operation_detail(template_dir: Path | None, operation_name: str) -> dic
         candidate_name = detail_file.name[:-8]
         if normalize_token(candidate_name) != target:
             continue
-        try:
-            detail = load_json(detail_file)
-        except json.JSONDecodeError:
+        detail, detail_format, error = load_structured_detail(detail_file)
+        if not isinstance(detail, dict):
             return {
                 "detail_file": detail_file.name,
-                "detail_file_format": "unparsed",
-                "error": "Cached detail file exists but could not be parsed as JSON.",
+                "detail_file_format": detail_format,
+                "error": error or "Cached detail file exists but did not parse to an object.",
             }
 
         params = detail.get("Params", [])
         request = detail.get("Request", {})
         return {
             "detail_file": detail_file.name,
+            "detail_file_format": detail_format,
             "description": detail.get("Description"),
             "group_id": detail.get("GroupId"),
             "cli_version": detail.get("CLIVersion"),

@@ -72,12 +72,17 @@ class EcsCreatePlanTest(unittest.TestCase):
                 mode="dryrun",
                 confirm_submit=False,
                 allow_placeholders=False,
+                max_count=10,
+                allow_large_count=False,
             )
 
             result = hcloud_ecs_create_plan.build_result(args)
 
         self.assertTrue(result["success"])
         self.assertIn("--arg=--dryrun", result["commands"]["safe_exec"])
+        self.assertIn("--arg=--cli-output=json", result["commands"]["safe_exec"])
+        self.assertIn("--expect-json", result["commands"]["safe_exec"])
+        self.assertIn("safe_exec_shell", result["commands"])
         self.assertIn("--cli-region=cn-north-4", result["commands"]["hcloud"])
 
     def test_submit_mode_requires_confirmation(self) -> None:
@@ -92,6 +97,8 @@ class EcsCreatePlanTest(unittest.TestCase):
                 mode="submit",
                 confirm_submit=False,
                 allow_placeholders=False,
+                max_count=10,
+                allow_large_count=False,
             )
 
             result = hcloud_ecs_create_plan.build_result(args)
@@ -113,6 +120,8 @@ class EcsCreatePlanTest(unittest.TestCase):
                 mode="dryrun",
                 confirm_submit=False,
                 allow_placeholders=True,
+                max_count=10,
+                allow_large_count=False,
             )
 
             result = hcloud_ecs_create_plan.build_result(args)
@@ -120,6 +129,63 @@ class EcsCreatePlanTest(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertFalse(result["ready_to_run"])
         self.assertEqual(result["commands"], {})
+
+    def test_validate_payload_rejects_embedded_placeholders(self) -> None:
+        payload = minimal_payload()
+        payload["body"]["server"]["name"] = "ecs-<env>"
+
+        validation = hcloud_ecs_create_plan.validate_payload(payload)
+
+        self.assertFalse(validation["valid"])
+        self.assertIn("Unresolved placeholder at body.server.name: ecs-<env>", validation["errors"])
+
+    def test_validate_payload_rejects_large_count_without_override(self) -> None:
+        payload = minimal_payload()
+        payload["body"]["server"]["count"] = 11
+
+        validation = hcloud_ecs_create_plan.validate_payload(payload)
+
+        self.assertFalse(validation["valid"])
+        self.assertIn(
+            "body.server.count exceeds conservative max 10. "
+            "Use --allow-large-count only after confirming cost and quota impact.",
+            validation["errors"],
+        )
+
+    def test_validate_payload_allows_large_count_with_override(self) -> None:
+        payload = minimal_payload()
+        payload["body"]["server"]["count"] = 11
+
+        validation = hcloud_ecs_create_plan.validate_payload(payload, allow_large_count=True)
+
+        self.assertTrue(validation["valid"])
+
+    def test_validate_payload_allows_admin_password_without_keypair(self) -> None:
+        payload = minimal_payload()
+        payload["body"]["server"].pop("key_name")
+        payload["body"]["server"]["adminPass"] = "password-value"
+
+        validation = hcloud_ecs_create_plan.validate_payload(payload)
+
+        self.assertTrue(validation["valid"])
+        self.assertNotIn(
+            "No body.server.key_name or body.server.adminPass found. Creation may still be valid, "
+            "but login access should be verified before submit.",
+            validation["warnings"],
+        )
+
+    def test_validate_payload_warns_when_security_group_is_missing(self) -> None:
+        payload = minimal_payload()
+        payload["body"]["server"].pop("security_groups")
+
+        validation = hcloud_ecs_create_plan.validate_payload(payload)
+
+        self.assertTrue(validation["valid"])
+        self.assertIn(
+            "No body.server.security_groups[0].id found. Huawei Cloud may bind the default security group, "
+            "but network exposure rules should be reviewed before submit.",
+            validation["warnings"],
+        )
 
 
 if __name__ == "__main__":

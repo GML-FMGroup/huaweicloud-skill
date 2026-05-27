@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "services": {
+    "ECS": {
+      "coverage": "high",
+      "default_region_required": true,
+      "query_operations": [
+        "ListServersDetails",
+        "ListFlavors",
+        "ListFlavorSellPolicies"
+      ],
+      "change_operations": [
+        "CreateServers",
+        "CreatePostPaidServers"
+      ],
+      "planner": "scripts/hcloud_ecs_create_plan.py",
+      "job_verifier": "scripts/hcloud_ecs_wait_job.py",
+      "resource_verifier": "scripts/hcloud_ecs_verify_active.py",
+      "playbooks": [
+        "references/playbooks/ecs-create-readiness.md",
+        "references/playbooks/ecs-inventory.md",
+        "references/playbooks/ecs-user-data-service-readiness.md"
+      ],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/api-ecs/ecs_02_0101.html"
+      ],
+      "known_limits": [
+        "ShowJob success is not full ECS completion; server ACTIVE verification is required.",
+        "Creation dependency discovery still relies on IAM, VPC, IMS, and KPS readiness paths."
+      ]
+    },
+    "IAM": {
+      "coverage": "medium",
+      "default_region_required": false,
+      "query_operations": [
+        "ShowProjectDetailsAndStatus"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [
+        "references/playbooks/iam-context-bootstrap.md"
+      ],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Current skill guidance focuses on authentication and context discovery, not IAM mutations."
+      ]
+    },
+    "VPC": {
+      "coverage": "medium",
+      "default_region_required": true,
+      "query_operations": [
+        "ListVpcs",
+        "ListSubnets",
+        "ListSecurityGroups"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [
+        "references/playbooks/vpc-network-readiness.md",
+        "references/playbooks/vpc-resource-discovery.md"
+      ],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Use as list-only discovery unless operation metadata is available in the local hcloud cache."
+      ]
+    },
+    "IMS": {
+      "coverage": "medium",
+      "default_region_required": true,
+      "query_operations": [
+        "ListImages"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [
+        "references/playbooks/ims-image-discovery.md"
+      ],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Use as image discovery support for ECS planning; do not assume mutation coverage."
+      ]
+    },
+    "KPS": {
+      "coverage": "medium",
+      "default_region_required": true,
+      "query_operations": [
+        "ListKeypairs"
+      ],
+      "change_operations": [],
+      "planner": null,
+      "job_verifier": null,
+      "resource_verifier": null,
+      "playbooks": [
+        "references/playbooks/kps-keypair-discovery.md"
+      ],
+      "official_docs": [
+        "https://support.huaweicloud.com/intl/zh-cn/"
+      ],
+      "known_limits": [
+        "Use ListKeypairs as keypair discovery support for ECS planning; key creation and private key handling need a dedicated risk gate."
+      ]
+    }
+  }
+}

@@ -12,7 +12,7 @@
 2. **发现 Service 和 Operation** — 通过本地元数据缓存或在线帮助发现可用的云服务和 API 操作
 3. **构造安全命令** — 查询类默认 JSON 输出，变更类默认先 dry-run，复杂参数使用 cli-jsonInput
 4. **执行查询或变更** — 通过安全执行包装脚本统一运行，自动脱敏和错误分类
-5. **校验结果** — 异步任务跟踪到终态，空响应显式排查
+5. **校验结果** — 异步 job 跟踪到终态，资源状态继续验证到可用，空响应显式排查
 6. **处理常见错误** — 按 USE_ERROR / NETWORK_ERROR / OPENAPI_ERROR / APIE_ERROR 分类处理
 
 ### 适用场景
@@ -30,7 +30,8 @@
 - ECS 创建准备：镜像、规格、AZ、VPC、子网、安全组、密钥对等依赖检查
 - ECS 创建校验：`cli-jsonInput` 占位符和关键字段本地校验
 - ECS 变更防护：默认先生成 dry-run 命令，确认后再进入 submit
-- ECS 异步校验：创建或变更返回 `job_id` 后，通过 `ShowJob` 轮询到终态
+- ECS 异步校验：创建或变更返回 `job_id` 后，通过 `ShowJob` 轮询 job 终态
+- ECS 资源校验：job 成功后，通过 `ListServersDetails` 验证目标实例达到 `ACTIVE`
 
 其他服务当前主要覆盖 **前置发现和 readiness 流程**：
 
@@ -50,6 +51,7 @@
 - 运行环境中已安装并配置华为云 KooCLI (`hcloud`)
 - 运行环境中有 Python 3.12+
 - 执行真实云资源变更前，遵循本 skill 的 dry-run、脱敏、错误分类和异步终态校验规则
+- API 字段语义优先查华为云官方文档：`https://support.huaweicloud.com/intl/zh-cn/`
 
 ### OpenClaw
 
@@ -97,7 +99,7 @@ Codex 环境中使用时，推荐把本目录作为一个完整 skill 安装到 
 1. 保留完整目录，不要只复制 `SKILL.md`。
 2. 在 Codex 对话或项目说明中明确：华为云 CLI 任务优先使用 `huaweicloud-skill`。
 3. 让 Codex 先读取 `SKILL.md`，再按 `references/workflow.md` 执行。
-4. 查询类任务优先走 `scripts/hcloud_safe_exec.py`；ECS 创建类任务优先走 `scripts/hcloud_ecs_create_plan.py`。
+4. 查询类任务优先走 `scripts/hcloud_safe_exec.py`；ECS 创建类任务优先走 `scripts/hcloud_ecs_create_plan.py`，真实提交后继续走 `scripts/hcloud_ecs_wait_job.py` 和 `scripts/hcloud_ecs_verify_active.py`。
 
 示例提示词：
 
@@ -151,8 +153,14 @@ huaweicloud-skill/
 │   ├── hcloud_safe_exec.py         # 安全执行包装
 │   ├── hcloud_prewarm_cache.py     # 缓存预热
 │   ├── hcloud_meta_lookup.py       # 本地元数据查询
+│   ├── hcloud_resource_discovery.py # service registry 驱动的只读资源发现
+│   ├── hcloud_change_plan.py        # 通用变更风险计划
+│   ├── hcloud_run_journal.py        # JSONL run journal
+│   ├── check_materials_drift.py     # references 与 materials 漂移检查
+│   ├── hcloud_core.py               # 轻量共享数据结构
 │   ├── hcloud_ecs_create_plan.py   # ECS 创建 JSON 校验和命令生成
-│   └── hcloud_ecs_wait_job.py      # ECS job 终态轮询
+│   ├── hcloud_ecs_wait_job.py      # ECS job 终态轮询
+│   └── hcloud_ecs_verify_active.py # ECS ACTIVE 资源状态验证
 ├── references/               # 整理后的参考资料
 │   ├── workflow.md                 # 标准执行流程
 │   ├── auth-and-context.md         # 认证与上下文规则
@@ -162,6 +170,8 @@ huaweicloud-skill/
 │   ├── cache-prewarm.md            # 缓存预热指南
 │   ├── local-meta-discovery.md     # 本地元数据发现
 │   ├── service-coverage.md         # 服务覆盖矩阵
+│   ├── service-registry.json       # 机器可读 service 覆盖和路由
+│   ├── materials-sources.json      # references 与原始材料映射
 │   ├── source-map.md               # 资料分层与来源映射
 │   └── playbooks/                  # 面向具体任务的执行手册
 │       ├── ecs-create-readiness.md
@@ -181,8 +191,12 @@ huaweicloud-skill/
     ├── baseline-scenarios.md
     ├── trigger-cases.md
     ├── manual-validation-2026-04-23.md
+    ├── test_hcloud_architecture_contracts.py
     ├── test_hcloud_ecs_create_plan.py
-    └── test_hcloud_ecs_wait_job.py
+    ├── test_hcloud_ecs_wait_job.py
+    ├── test_hcloud_ecs_verify_active.py
+    ├── test_hcloud_meta_lookup.py
+    └── test_hcloud_safe_exec.py
 ```
 
 ## 前置条件
