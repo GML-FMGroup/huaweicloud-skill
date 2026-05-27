@@ -19,18 +19,19 @@
 |---------|----------|----------|------|
 | `ECS` | High | 最完整 | 本地有 `apis_en.json`、部分 operation detail cache，已验证 `ListFlavors` 的 meta lookup、dry-run、本地参数校验；已有创建 JSON 校验、ShowJob 轮询和 ACTIVE 资源验证脚本 |
 | `IAM` | Medium | 可做上下文和 endpoint 发现 | 当前机器仅有 endpoint cache，operation 级 detail 仍不完整 |
-| `VPC` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 本地可发现 VPC list/count 型 operation；部分 operation detail 不完整，执行时需要结合 metadata 和返回错误校正参数 |
-| `IMS` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 本地可发现镜像 list 型 operation；资源级 member/tag 操作需要目标 ID，不作为通用 discovery 入口 |
-| `KPS` | Medium | 有 workflow、playbook 和 list-only discovery 入口 | 本地已验证 `ListKeypairs` operation 名称；密钥创建和私钥处理需要专门风险 gate |
+| `VPC` | Medium | 有 workflow、playbook、list-only discovery 和第一层 show 查询 | 本地可发现 VPC list/count 型 operation；`ShowVpc`、`ShowSubnet`、`ShowSecurityGroup` 等详情查询需要显式目标 ID |
+| `IMS` | Medium | 有 workflow、playbook、list-only discovery 和镜像详情查询 | 本地可发现镜像 list 型 operation；`GlanceShowImage` 等资源级操作需要目标 ID，不作为通用 discovery 入口 |
+| `KPS` | Medium | 有 workflow、playbook、list-only discovery 和 keypair 详情查询 | 本地已验证 `ListKeypairs` / `ListKeypairDetail` operation 名称；密钥创建和私钥处理需要专门风险 gate |
 | `EIP` | Medium | 有 list/count 型 discovery 入口 | 本地可发现 EIP、带宽、公网 IP 池、配额等查询 operation；operation detail 缓存不完整时会保守省略可选参数 |
-| `ELB` | Low | 已登记常用查询入口和 planner-only 变更入口 | service 可见但本地没有 operation detail；用于负载均衡验证和离线问题集覆盖，不等同于完整 ELB 执行能力 |
-| `EVS` | Low | 已登记常用查询入口和 planner-only 变更入口 | service 可见但本地没有 operation detail；云硬盘挂载、扩容、格式化仍需云侧和 ECS 内双重验收 |
-| `NAT` | Low | 已登记常用查询入口 | service 可见但本地没有 operation detail；NAT 创建、绑定和删除仍未开放通用变更 |
+| `ELB` | Low | 已登记常用查询入口、第一层 show 查询和 planner-only 变更入口 | service 可见但本地没有 operation detail；用于负载均衡验证和离线问题集覆盖，不等同于完整 ELB 执行能力 |
+| `EVS` | Low | 已登记常用查询入口、volume/snapshot 详情和 planner-only 变更入口 | service 可见但本地没有 operation detail；云硬盘挂载、扩容、格式化仍需云侧和 ECS 内双重验收 |
+| `NAT` | Low | 已登记常用查询入口和 NAT/DNAT/SNAT 详情查询 | service 可见但本地没有 operation detail；NAT 创建、绑定和删除仍未开放通用变更 |
 | `RDS` | Low | 已登记常用查询入口和 planner-only 变更入口 | service 可见但本地没有 operation detail；RDS detail 查询通常需要实例 ID 和引擎相关参数 |
-| `CCE` / `CDN` / `DNS` / `SCM` / `CES` | Low | 已登记最小验证入口 | 来自人工 E2E 验证集和本地 service 存在性检查，仅用于前置发现和回归统计 |
+| `CCE` / `CDN` / `DNS` / `SCM` / `CES` | Low | 已登记最小验证入口，部分服务支持目标查询 | 来自人工 E2E 验证集和本地 service 存在性检查，仅用于前置发现和回归统计 |
 
 `query_operations` 表示可作为通用 discovery 起点的查询。`resource_query_operations` 表示已知资源 ID 或上下文后才适合执行的查询，覆盖统计会计入，但 `hcloud_resource_discovery.py` 不会默认把它们当作 list-only 操作执行。
 `hcloud_resource_query.py` 可执行 `resource_query_operations` 和需要显式目标参数的只读查询；缺少目标参数时会失败，不会替用户猜资源 ID。
+`hcloud_resource_discovery.py` 和 `hcloud_resource_query.py` 会对 operation 名称做宽松匹配，因此问题集里的 `showvpc`、`listcloudservers` 这类写法可以解析到 registry 中的规范 KooCLI operation。
 `change_operations` 中的非 ECS 项当前表示 `hcloud_service_change_plan.py` 可生成 planner-only 风险计划，不表示已经允许自动提交真实变更。
 `supported_cli_regions` / `preferred_cli_region` 用于记录 KooCLI 层面的区域限制；例如 CDN `ListDomains` 会从不支持的业务 region 自动落到 `cn-north-1` 执行只读 discovery。
 
@@ -71,8 +72,9 @@
 - 在 `services_en.json` 中可以看到这些 service
 - 本地 template cache 覆盖深度不一致；EIP / VPC 等可能只有 operation index，ELB / EVS / NAT / RDS 等当前只有 service 入口，缺少 per-operation detail
 - `hcloud_resource_discovery.py` 可以按 registry 为这些服务生成 list-only 查询命令，但真实执行仍依赖本机 hcloud metadata 和账号权限
-- `hcloud_resource_query.py` 可以为 EIP `ShowPublicip`、ELB `ListMembers`、RDS `ShowConfiguration`、CCE `ShowCluster/ListNodes`、CDN `ShowDomain` 等目标型只读查询生成可执行命令；`data.xlsx` 里的 RDS `ShowConfigurationDetail` 会被覆盖检查映射到 KooCLI 实际操作 `ShowConfiguration`
+- `hcloud_resource_query.py` 可以为 EIP `ShowPublicip`、VPC `ShowVpc/ShowSubnet/ShowSecurityGroup`、ELB `ShowLoadBalancer/ShowListener/ListMembers`、EVS `ShowVolume/ShowSnapshot`、IMS `GlanceShowImage`、KPS `ListKeypairDetail`、NAT `ShowNatGateway/ShowNatGatewayDnatRule`、RDS `ShowConfiguration`、CCE `ShowCluster/ListNodes`、CDN `ShowDomain`、DNS `ShowRecordSet`、SCM `ShowCertificate` 等目标型只读查询生成可执行命令；`data.xlsx` 里的 RDS `ShowConfigurationDetail` 会被覆盖检查映射到 KooCLI 实际操作 `ShowConfiguration`
 - `hcloud_service_readiness.py` 可以按服务批量生成或执行只读 readiness 检查，并汇总资源数量和状态计数
+- 默认 readiness 顺序按问题集频次广度优先排列：ECS、VPC、RDS、IMS、EVS、EIP、ELB、NAT、KPS、IAM，然后补 CCE、CDN、DNS、SCM、CES
 - `hcloud_readonly_smoke.py` 可以批量生成或执行多服务只读 smoke 查询
 - CDN `ListDomains` 已验证需要使用 KooCLI 支持区域；registry 会把 `cn-north-4` 调整到 `cn-north-1`
 - `hcloud_service_change_plan.py` 可以为多服务变更生成风险计划和验证建议，但不会执行 submit
@@ -97,7 +99,8 @@
 
 - 先做上下文确认
 - 先用 service 级 discovery 和 playbook 梳理动作
-- 把真实执行建立在进一步元数据可用之后
+- 已知资源 ID 时，可用 `hcloud_resource_query.py` 做第一层详情查询
+- 把真实变更执行建立在进一步元数据可用之后
 
 ### 当用户任务在 ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 范围内
 

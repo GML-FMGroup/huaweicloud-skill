@@ -21,9 +21,45 @@ CURATED_REQUIRED_PARAMS = {
     ("CCE", "ListNodes"): ("cluster_id",),
     ("CCE", "ShowCluster"): ("cluster_id",),
     ("CDN", "ShowDomain"): ("domain_id",),
+    ("DNS", "ShowPublicZone"): ("zone_id",),
+    ("DNS", "ShowRecordSet"): ("zone_id", "recordset_id"),
+    ("ECS", "ListServerBlockDevices"): ("server_id",),
+    ("ECS", "ListServerInterfaces"): ("server_id",),
+    ("ECS", "ListServerVolumeAttachments"): ("server_id",),
+    ("ECS", "ShowJob"): ("job_id",),
+    ("ECS", "ShowResetPasswordFlag"): ("server_id",),
+    ("ECS", "ShowServer"): ("server_id",),
+    ("ECS", "ShowServerBlockDevice"): ("server_id", "volume_id"),
+    ("ECS", "ShowServerGroup"): ("server_group_id",),
+    ("ECS", "ShowServerTags"): ("server_id",),
     ("EIP", "ShowPublicip"): ("publicip_id",),
+    ("ELB", "ShowCertificate"): ("certificate_id",),
+    ("ELB", "ShowHealthMonitor"): ("healthmonitor_id",),
+    ("ELB", "ShowListener"): ("listener_id",),
+    ("ELB", "ShowLoadBalancer"): ("loadbalancer_id",),
+    ("ELB", "ShowLoadBalancerStatus"): ("loadbalancer_id",),
+    ("ELB", "ShowMember"): ("pool_id", "member_id"),
+    ("ELB", "ShowPool"): ("pool_id",),
     ("ELB", "ListMembers"): ("pool_id",),
+    ("EVS", "ShowJob"): ("job_id",),
+    ("EVS", "ShowSnapshot"): ("snapshot_id",),
+    ("EVS", "ShowVolume"): ("volume_id",),
+    ("EVS", "ShowVolumeTags"): ("volume_id",),
+    ("IMS", "GlanceShowImage"): ("image_id",),
+    ("IMS", "GlanceShowImageMember"): ("image_id", "member_id"),
+    ("IMS", "ShowImageMember"): ("image_id", "member_id"),
+    ("IMS", "ShowJob"): ("job_id",),
+    ("KPS", "ListKeypairDetail"): ("keypair_name",),
+    ("NAT", "ShowNatGateway"): ("nat_gateway_id",),
+    ("NAT", "ShowNatGatewayDnatRule"): ("dnat_rule_id",),
+    ("NAT", "ShowNatGatewaySnatRule"): ("snat_rule_id",),
     ("RDS", "ShowConfiguration"): ("config_id",),
+    ("SCM", "ShowCertificate"): ("certificate_id",),
+    ("VPC", "ShowPort"): ("port_id",),
+    ("VPC", "ShowSecurityGroup"): ("security_group_id",),
+    ("VPC", "ShowSecurityGroupRule"): ("security_group_rule_id",),
+    ("VPC", "ShowSubnet"): ("subnet_id",),
+    ("VPC", "ShowVpc"): ("vpc_id",),
 }
 OPERATION_ALIASES = {
     ("RDS", "ShowConfigurationDetail"): "ShowConfiguration",
@@ -71,6 +107,18 @@ def operation_scope(service_entry: dict[str, Any], operation: str) -> str | None
 def canonical_operation(service: str, operation: str) -> str:
     """Return the executable KooCLI operation name for a user-facing alias."""
     return OPERATION_ALIASES.get((service.upper(), operation), operation)
+
+
+def resolve_registered_operation(service_entry: dict[str, Any], operation: str) -> str | None:
+    """Resolve operation aliases and case variants against registered read operations."""
+    registered = list(service_entry.get("resource_query_operations", [])) + list(service_entry.get("query_operations", []))
+    if operation in registered:
+        return operation
+    normalized_operation = hcloud_resource_discovery.normalize_operation(operation)
+    for item in registered:
+        if hcloud_resource_discovery.normalize_operation(item) == normalized_operation:
+            return item
+    return None
 
 
 def metadata_required_params(service: str, operation: str) -> list[str]:
@@ -176,18 +224,21 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
     registry = hcloud_resource_discovery.load_registry()
     service = args.service.upper()
     requested_operation = args.operation
-    operation = canonical_operation(service, requested_operation)
+    aliased_operation = canonical_operation(service, requested_operation)
     entry = registry.get("services", {}).get(service)
     if entry is None:
         return {
             "success": False,
             "service": service,
-            "operation": operation,
+            "operation": aliased_operation,
             "requested_operation": requested_operation,
             "error": f"Service is not registered: {service}",
             "available_services": sorted(registry.get("services", {})),
         }
 
+    operation = resolve_registered_operation(entry, aliased_operation)
+    if operation is None:
+        operation = aliased_operation
     scope = operation_scope(entry, operation)
     if scope is None:
         return {

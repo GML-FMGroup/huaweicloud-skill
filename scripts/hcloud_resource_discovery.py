@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,11 @@ from hcloud_meta_lookup import collect_template_dirs, load_operation_detail, nor
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "references" / "service-registry.json"
+
+
+def normalize_operation(value: str) -> str:
+    """Return a loose operation key for case-insensitive matching."""
+    return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
 def load_registry(path: Path = REGISTRY_PATH) -> dict[str, Any]:
@@ -55,6 +61,17 @@ def resolve_cli_region(args: argparse.Namespace, service_entry: dict[str, Any]) 
         "supported_regions": supported_regions,
         "reason": reason,
     }
+
+
+def resolve_query_operation(operations: list[str], requested_operation: str) -> str | None:
+    """Resolve a requested operation against registered list-only operations."""
+    if requested_operation in operations:
+        return requested_operation
+    normalized_requested = normalize_operation(requested_operation)
+    for operation in operations:
+        if normalize_operation(operation) == normalized_requested:
+            return operation
+    return None
 
 
 def build_safe_exec_command(
@@ -122,7 +139,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
 
     operations = service_entry.get("query_operations", [])
     if args.operation:
-        if args.operation not in operations:
+        operation = resolve_query_operation(operations, args.operation)
+        if operation is None:
             return {
                 "success": False,
                 "service": service,
@@ -130,10 +148,10 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
                 "error": f"Operation is not registered as list-only query for {service}: {args.operation}",
                 "available_query_operations": operations,
             }
-        operations = [args.operation]
+        operations = [operation]
 
     commands = [build_command_item(args, service, operation, service_entry) for operation in operations]
-    return {
+    result = {
         "success": True,
         "mode": "execute" if args.execute else "plan",
         "service": service,
@@ -142,6 +160,9 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "playbooks": service_entry.get("playbooks", []),
         "commands": commands,
     }
+    if args.operation and operations and args.operation != operations[0]:
+        result["requested_operation"] = args.operation
+    return result
 
 
 def execute_plan(plan: dict[str, Any], timeout: int) -> dict[str, Any]:

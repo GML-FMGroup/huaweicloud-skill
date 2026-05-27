@@ -258,6 +258,46 @@ python3 scripts/hcloud_resource_query.py \
   - EVS/NAT/CCE/CDN/SCM 查询成功，当前账号/区域下部分服务返回 0 个资源。
   - DNS 返回 2 个 public zone 和 6 条 record set。
   - CES `ListMetrics` 返回 644 个 metric。
+
+## 验证 8：高频服务广度优先扩展
+
+### Command shape
+
+```bash
+python3 scripts/hcloud_service_readiness.py \
+  --service ECS \
+  --service IMS \
+  --service KPS \
+  --service IAM \
+  --region=cn-north-4 \
+  --execute \
+  --pretty
+```
+
+另用摘要脚本顺序执行以下只读链路：先 list，再在存在资源时执行对应 detail 查询：
+
+- VPC `ListVpcs` -> `ShowVpc`
+- ELB `ListLoadbalancers` -> `ShowLoadBalancer`
+- EVS `ListVolumes` -> `ShowVolume`
+- NAT `ListNatGateways` -> `ShowNatGateway`
+- IMS `ListImages` -> `GlanceShowImage`
+- KPS `ListKeypairs` -> `ListKeypairDetail`
+
+### Result
+
+- ECS/IMS/KPS/IAM readiness 成功执行；ECS `ShowServer`、IMS `GlanceShowImage`、KPS `ListKeypairDetail` 因未传目标 ID 在 readiness 中安全 skipped。
+- VPC list+detail 成功，当前区域发现 1 个 VPC 并成功执行 `ShowVpc`。
+- ELB list+detail 成功，当前区域发现 1 个 ELB 并成功执行 `ShowLoadBalancer`。
+- EVS `ListVolumes` 成功，当前区域 0 个 volume，因此未执行 `ShowVolume`。
+- NAT `ListNatGateways` 成功，当前区域 0 个 NAT gateway，因此未执行 `ShowNatGateway`。
+- IMS list+detail 成功，抽样镜像可执行 `GlanceShowImage`。
+- KPS list+detail 成功，抽样 keypair 可执行 `ListKeypairDetail`。
+- 小写 operation 计划验证通过：`listcloudservers` -> `ListCloudServers`，`showvpc` -> `ShowVpc`，`shownatgatewaydnatrule` -> `ShowNatGatewayDnatRule`。
+
+### Notes
+
+- 本验证只执行只读查询，不创建、修改、绑定、解绑或删除资源。
+- 摘要脚本只输出成功状态和资源数量，不展开资源 ID、公钥、project ID 等明细。
   - CCE `ShowCluster/ListNodes` 和 CDN `ShowDomain` 因缺少目标 ID 被正确跳过。
 
 ### Follow-up Fix

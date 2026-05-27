@@ -14,14 +14,24 @@ import hcloud_resource_query
 import hcloud_resource_verify
 
 
-DEFAULT_SERVICES = ("VPC", "EIP", "ELB", "EVS", "NAT", "RDS", "CCE", "CDN", "DNS", "SCM", "CES")
+DEFAULT_SERVICES = ("ECS", "VPC", "RDS", "IMS", "EVS", "EIP", "ELB", "NAT", "KPS", "IAM", "CCE", "CDN", "DNS", "SCM", "CES")
 READINESS_PROFILES = {
+    "ECS": [
+        {"operation": "ListCloudServers"},
+        {"operation": "ListServersDetails"},
+        {"operation": "ListFlavors"},
+        {"operation": "ListServerAzInfo"},
+        {"operation": "ShowServer", "required_targets": ["server_id"]},
+    ],
     "VPC": [
         {"operation": "ListVpcs"},
         {"operation": "ListSubnets"},
         {"operation": "ListSecurityGroups"},
         {"operation": "ListSecurityGroupRules"},
         {"operation": "ListVpcPeerings"},
+        {"operation": "ShowVpc", "required_targets": ["vpc_id"]},
+        {"operation": "ShowSubnet", "required_targets": ["subnet_id"]},
+        {"operation": "ShowSecurityGroup", "required_targets": ["security_group_id"]},
     ],
     "EIP": [
         {"operation": "ListPublicips"},
@@ -31,15 +41,25 @@ READINESS_PROFILES = {
         {"operation": "ListLoadbalancers"},
         {"operation": "ListListeners"},
         {"operation": "ListPools"},
+        {"operation": "ShowLoadBalancer", "required_targets": ["loadbalancer_id"]},
+        {"operation": "ShowListener", "required_targets": ["listener_id"]},
+        {"operation": "ShowPool", "required_targets": ["pool_id"]},
         {"operation": "ListMembers", "required_targets": ["pool_id"]},
+        {"operation": "ShowMember", "required_targets": ["pool_id", "member_id"]},
     ],
     "EVS": [
         {"operation": "ListVolumes"},
         {"operation": "ListSnapshots"},
+        {"operation": "ShowVolume", "required_targets": ["volume_id"]},
+        {"operation": "ShowSnapshot", "required_targets": ["snapshot_id"]},
     ],
     "NAT": [
         {"operation": "ListNatGateways"},
         {"operation": "ListNatGatewayDnatRules"},
+        {"operation": "ListNatGatewaySnatRules"},
+        {"operation": "ShowNatGateway", "required_targets": ["nat_gateway_id"]},
+        {"operation": "ShowNatGatewayDnatRule", "required_targets": ["dnat_rule_id"]},
+        {"operation": "ShowNatGatewaySnatRule", "required_targets": ["snat_rule_id"]},
     ],
     "RDS": [
         {"operation": "ListInstances"},
@@ -58,12 +78,27 @@ READINESS_PROFILES = {
     "DNS": [
         {"operation": "ListPublicZones"},
         {"operation": "ListRecordSets"},
+        {"operation": "ShowPublicZone", "required_targets": ["zone_id"]},
+        {"operation": "ShowRecordSet", "required_targets": ["zone_id", "recordset_id"]},
     ],
     "SCM": [
         {"operation": "ListCertificates"},
+        {"operation": "ShowCertificate", "required_targets": ["certificate_id"]},
     ],
     "CES": [
         {"operation": "ListMetrics"},
+    ],
+    "IMS": [
+        {"operation": "ListImages"},
+        {"operation": "ListOsVersions"},
+        {"operation": "GlanceShowImage", "required_targets": ["image_id"]},
+    ],
+    "KPS": [
+        {"operation": "ListKeypairs"},
+        {"operation": "ListKeypairDetail", "required_targets": ["keypair_name"]},
+    ],
+    "IAM": [
+        {"operation": "ShowProjectDetailsAndStatus"},
     ],
 }
 

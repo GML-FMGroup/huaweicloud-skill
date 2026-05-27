@@ -297,6 +297,7 @@ python3 scripts/hcloud_resource_discovery.py \
 - 按 `references/service-registry.json` 生成 list-only 查询命令
 - 对 ECS / IAM / VPC / IMS / KPS / EIP / ELB / EVS / NAT / RDS 等服务做创建前依赖发现
 - `resource_query_operations` 是已知资源 ID 后的查询线索，不会被通用 discovery 默认执行
+- operation 名称会做宽松匹配，兼容 `listcloudservers`、`showvpc` 这类大小写不规范的输入
 - 如果 registry 声明了 `supported_cli_regions`，脚本会把不支持的 `--region` 调整到 `preferred_cli_region`，例如 CDN discovery 使用 `cn-north-1`
 - 默认只生成计划；只有显式 `--execute` 才执行查询
 
@@ -316,6 +317,7 @@ python3 scripts/hcloud_resource_query.py \
 
 - 执行 registry 中的 `resource_query_operations`，以及需要显式参数的只读查询
 - 对 `Show*`、目标型 `List*` 等操作要求通过 `--param KEY=VALUE` 显式传资源 ID，不猜参数
+- 当前已覆盖常用目标查询，例如 VPC `ShowVpc`、EVS `ShowVolume`、IMS `GlanceShowImage`、KPS `ListKeypairDetail`、NAT `ShowNatGateway`、ELB `ShowLoadBalancer`、DNS `ShowRecordSet`、SCM `ShowCertificate`
 - 默认只生成计划；只有显式 `--execute` 才运行
 - 对 `ShowServerPassword`、证书私钥等敏感读操作默认拦截，必须显式 `--allow-sensitive-read`
 
@@ -332,7 +334,8 @@ python3 scripts/hcloud_service_readiness.py \
 
 用途：
 
-- 按服务跑一组只读 readiness 检查，覆盖 VPC / EIP / ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES
+- 按服务跑一组只读 readiness 检查，覆盖 ECS / VPC / RDS / IMS / EVS / EIP / ELB / NAT / KPS / IAM / CCE / CDN / DNS / SCM / CES
+- 默认服务顺序按外部问题集频次广度优先排列，优先覆盖 ECS / VPC / RDS / IMS / EVS / EIP / ELB / NAT / KPS / IAM
 - 无目标参数时执行 list-only 检查；需要目标 ID 的检查会标记 skipped
 - 可用 `--target pool_id=<pool-id>`、`--target cluster_id=<cluster-id>` 等补充目标参数
 - 显式 `--execute` 时才运行真实只读查询，并返回资源数量和状态计数 summary
@@ -452,10 +455,11 @@ python3 scripts/check_question_coverage.py --pretty
 - ECS 创建 JSON 本地校验、dry-run 命令生成、job 终态轮询和 ACTIVE 资源验证
 - service registry、只读资源发现、通用变更风险计划、run journal、材料漂移检查和问题集回归检查
 - VPC / IMS / KPS / IAM / EIP 创建前只读发现方法
+- VPC / IMS / KPS / ELB / EVS / NAT / DNS / SCM 等服务的第一层资源级只读查询登记
 - ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 的低覆盖查询登记，用于离线数据集回归和前置发现
 - 多服务只读 smoke、planner-only 变更计划和 JSON 结果验收脚本
 
-当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS、EIP 主要提供工作流和发现方法；对 ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM、CES 只提供低覆盖查询登记和 planner-only 计划，不承诺已经沉淀了全量稳定 operation 清单。
+当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS、EIP 主要提供工作流、发现方法和部分目标查询；对 ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM、CES 提供低覆盖查询登记、第一层目标查询和 planner-only 计划，不承诺已经沉淀了全量稳定 operation 清单。
 
 当前首版已经补了本地 meta cache 发现脚本和创建类示例模板；非 ECS 服务的 operation detail 缓存可能不完整，脚本会在缺少参数元数据时保守省略可选参数。
 

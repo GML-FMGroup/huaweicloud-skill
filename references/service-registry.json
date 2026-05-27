@@ -59,6 +59,7 @@
       "query_operations": [
         "ShowProjectDetailsAndStatus"
       ],
+      "resource_query_operations": [],
       "change_operations": [],
       "planner": null,
       "job_verifier": null,
@@ -110,6 +111,13 @@
         "ListVpcRoutes",
         "ListVpcTags"
       ],
+      "resource_query_operations": [
+        "ShowVpc",
+        "ShowSubnet",
+        "ShowSecurityGroup",
+        "ShowSecurityGroupRule",
+        "ShowPort"
+      ],
       "change_operations": [
         "CreateVpc",
         "UpdateVpc",
@@ -151,6 +159,12 @@
         "ListTags",
         "ListVersions"
       ],
+      "resource_query_operations": [
+        "GlanceShowImage",
+        "GlanceShowImageMember",
+        "ShowImageMember",
+        "ShowJob"
+      ],
       "change_operations": [],
       "planner": null,
       "job_verifier": null,
@@ -170,6 +184,9 @@
       "default_region_required": true,
       "query_operations": [
         "ListKeypairs"
+      ],
+      "resource_query_operations": [
+        "ListKeypairDetail"
       ],
       "change_operations": [],
       "planner": null,
@@ -270,7 +287,14 @@
         "ListWhitelists"
       ],
       "resource_query_operations": [
-        "ListMembers"
+        "ListMembers",
+        "ShowCertificate",
+        "ShowHealthMonitor",
+        "ShowListener",
+        "ShowLoadBalancer",
+        "ShowLoadBalancerStatus",
+        "ShowMember",
+        "ShowPool"
       ],
       "change_operations": [
         "CreateLoadBalancer",
@@ -318,6 +342,12 @@
         "ListVolumesByTags",
         "ListVolumeTags"
       ],
+      "resource_query_operations": [
+        "ShowJob",
+        "ShowSnapshot",
+        "ShowVolume",
+        "ShowVolumeTags"
+      ],
       "change_operations": [
         "CreateVolume",
         "UpdateVolume",
@@ -350,7 +380,7 @@
         "ListNatGatewayByTag",
         "ListNatGatewayDnatRules",
         "ListNatGateways",
-        "ListNatGatewaysNatRules",
+        "ListNatGatewaySnatRules",
         "ListNatGatewayTag",
         "ListPrivateDnats",
         "ListPrivateNats",
@@ -360,6 +390,11 @@
         "ListTransitIps",
         "ListTransitIpsByTags",
         "ListTransitIpTags"
+      ],
+      "resource_query_operations": [
+        "ShowNatGateway",
+        "ShowNatGatewayDnatRule",
+        "ShowNatGatewaySnatRule"
       ],
       "change_operations": [
         "CreateNatGateway",
@@ -512,6 +547,10 @@
         "ListPublicZones",
         "ListRecordSets"
       ],
+      "resource_query_operations": [
+        "ShowPublicZone",
+        "ShowRecordSet"
+      ],
       "change_operations": [
         "CreateRecordSet",
         "UpdateRecordSet",
@@ -534,6 +573,9 @@
       "default_region_required": false,
       "query_operations": [
         "ListCertificates"
+      ],
+      "resource_query_operations": [
+        "ShowCertificate"
       ],
       "change_operations": [
         "ApplyCertificate",
@@ -558,6 +600,7 @@
       "query_operations": [
         "ListMetrics"
       ],
+      "resource_query_operations": [],
       "change_operations": [],
       "planner": null,
       "job_verifier": null,

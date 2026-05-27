@@ -32,6 +32,9 @@ SERVICE_ALIASES = {
     "路由表": "VPC",
     "网关": "VPC",
     "云硬盘": "EVS",
+    "镜像": "IMS",
+    "密钥对": "KPS",
+    "NAT网关": "NAT",
     "弹性公网": "EIP",
     "负载均衡": "ELB",
     "云监控": "CES",
@@ -43,6 +46,9 @@ OPERATION_SERVICE_HINTS = [
     ("EIP", ("Publicip", "PublicIp", "Bandwidth", "Eip", "FloatingIp")),
     ("ELB", ("Loadbalancer", "Listener", "Member", "Pool", "HealthMonitor", "L7", "Whitelist")),
     ("EVS", ("Volume", "Snapshot", "Cinder")),
+    ("IMS", ("Image", "Glance")),
+    ("KPS", ("Keypair", "PrivateKey")),
+    ("NAT", ("NatGateway", "Dnat", "Snat", "TransitIp")),
     ("RDS", ("Instance", "Database", "DbUser", "Backup", "SlowLog", "Configuration", "Sql", "Datastore")),
     ("DNS", ("RecordSet",)),
     ("SCM", ("Certificate",)),
@@ -307,7 +313,7 @@ def question_validation_pairs(rows: list[list[str]]) -> tuple[int | None, list[t
 def infer_service(text: str, operation: str) -> str | None:
     """Infer a Huawei Cloud service from validation text and operation name."""
     text_upper = text.upper()
-    for service in ("ECS", "EIP", "ELB", "RDS", "VPC", "EVS", "CCE", "CDN", "DNS", "SCM", "OBS", "CES"):
+    for service in ("ECS", "EIP", "ELB", "RDS", "VPC", "EVS", "IMS", "KPS", "NAT", "CCE", "CDN", "DNS", "SCM", "OBS", "CES"):
         if re.search(rf"\b{service}\b", text_upper):
             return service
     for keyword, service in SERVICE_ALIASES.items():
@@ -328,7 +334,7 @@ def infer_nearest_service(prefix: str, operation: str) -> str | None:
     """Infer service from the nearest marker before an operation reference."""
     candidates: list[tuple[int, str]] = []
     prefix_upper = prefix.upper()
-    for service in ("ECS", "EIP", "ELB", "RDS", "VPC", "EVS", "CCE", "CDN", "DNS", "SCM", "OBS", "CES"):
+    for service in ("ECS", "EIP", "ELB", "RDS", "VPC", "EVS", "IMS", "KPS", "NAT", "CCE", "CDN", "DNS", "SCM", "OBS", "CES"):
         for match in re.finditer(rf"\b{service}\b", prefix_upper):
             candidates.append((match.start(), service))
     for keyword, service in SERVICE_ALIASES.items():

@@ -115,6 +115,23 @@ class ArchitectureContractsTest(unittest.TestCase):
         self.assertIn("--expect-json", command)
         self.assertIn("--arg=--limit=20", command)
 
+    def test_resource_discovery_resolves_lowercase_operation_names(self) -> None:
+        args = SimpleNamespace(
+            service="ECS",
+            operation="listcloudservers",
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+        )
+
+        plan = hcloud_resource_discovery.build_plan(args)
+
+        self.assertTrue(plan["success"], plan)
+        self.assertEqual(plan["commands"][0]["operation"], "ListCloudServers")
+        self.assertEqual(plan["requested_operation"], "listcloudservers")
+
     def test_kps_discovery_uses_local_metadata_operation_name(self) -> None:
         args = SimpleNamespace(
             service="KPS",
@@ -338,6 +355,11 @@ class ArchitectureContractsTest(unittest.TestCase):
                     ["Check cluster.", "1. 调用 CCE 查询工具（ShowCluster）确认集群存在"],
                     ["Check CDN.", "1. 调用 CDN 查询工具（ShowDomain）确认域名存在"],
                     ["Check RDS config.", "1. 调用 RDS 查询工具（ShowConfigurationDetail）确认参数模板存在"],
+                    ["Check VPC.", "1. 调用 VPC 查询工具（ShowVpc）确认网络存在"],
+                    ["Check EVS.", "1. 调用云硬盘查询工具（ShowVolume）确认磁盘存在"],
+                    ["Check IMS.", "1. 调用镜像查询工具（GlanceShowImage）确认镜像存在"],
+                    ["Check KPS.", "1. 调用密钥对查询工具（ListKeypairDetail）确认密钥对存在"],
+                    ["Check NAT.", "1. 调用 NAT 查询工具（ShowNatGatewayDnatRule）确认 DNAT 规则存在"],
                 ],
             )
 
@@ -355,6 +377,26 @@ class ArchitectureContractsTest(unittest.TestCase):
         )
         self.assertEqual(
             result["executable_validation_paths"]["RDS:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["VPC:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["EVS:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["IMS:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["KPS:resource_query:scripts/hcloud_resource_query.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["NAT:resource_query:scripts/hcloud_resource_query.py"],
             1,
         )
         self.assertEqual(

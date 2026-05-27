@@ -33,17 +33,18 @@
 - ECS 异步校验：创建或变更返回 `job_id` 后，通过 `ShowJob` 轮询 job 终态
 - ECS 资源校验：job 成功后，通过 `ListServersDetails` 验证目标实例达到 `ACTIVE`
 
-其他服务当前主要覆盖 **前置发现和 readiness 流程**：
+其他服务当前按 **高频服务广度优先** 覆盖前置发现、资源级只读查询和 readiness 流程：
 
+- ECS / VPC / RDS / IMS / EVS / EIP / ELB / NAT：按问题集频次优先进入默认 readiness 顺序
 - IAM：认证上下文、profile、region、project/domain 检查
-- VPC：VPC、子网、安全组、公网接入等网络依赖发现
-- IMS：镜像选择和 image id 发现路径
-- KPS：密钥对发现和 SSH 登录前检查
-- EIP：EIP、带宽、公网 IP 池、配额等 list/count 型发现入口
-- ELB / EVS / NAT / RDS：已登记常用只读 operation，适合做初步发现；本地缺少 operation detail 时会保守省略可选参数
-- CCE / CDN / DNS / SCM / CES：已按离线验证集登记最小查询入口，当前只作为低覆盖验证和发现线索
+- VPC：VPC、子网、安全组等 list 发现，并支持 `ShowVpc` / `ShowSubnet` / `ShowSecurityGroup` 等目标查询
+- IMS：镜像列表、OS 版本和 `GlanceShowImage` 镜像详情路径
+- KPS：密钥对列表和 `ListKeypairDetail` 详情路径
+- EIP：EIP、带宽、公网 IP 池、配额等 list/count 型发现入口，以及 `ShowPublicip`
+- ELB / EVS / NAT / RDS：已登记常用 list 查询和第一层 show/detail 查询；本地缺少 operation detail 时通过显式参数白名单保守执行
+- CCE / CDN / DNS / SCM / CES：已按离线验证集登记最小查询入口；其中 CDN、DNS、SCM、CCE 已支持部分目标型查询
 
-这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。`service-registry.json` 中的 `resource_query_operations` 只表示“已知资源 ID 后可查询”，不会被通用 discovery 默认执行。对 CDN 这类 KooCLI 只接受固定区域集合的服务，registry 会记录 `supported_cli_regions` 和 `preferred_cli_region`，discovery/smoke 会据此生成可执行的查询命令。
+这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。`service-registry.json` 中的 `resource_query_operations` 只表示“已知资源 ID 后可查询”，不会被通用 discovery 默认执行。查询脚本会宽松匹配大小写或数据集里的 operation 写法，例如 `showvpc` 会解析到 `ShowVpc`。对 CDN 这类 KooCLI 只接受固定区域集合的服务，registry 会记录 `supported_cli_regions` 和 `preferred_cli_region`，discovery/smoke 会据此生成可执行的查询命令。
 
 ## 在常用 Agent 中使用
 

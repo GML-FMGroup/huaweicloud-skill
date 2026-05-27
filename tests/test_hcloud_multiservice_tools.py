@@ -110,6 +110,48 @@ class MultiServiceToolsTest(unittest.TestCase):
         self.assertIn("--arg=--cli-output=json", result["command"])
         self.assertIn("--expect-json", result["command"])
 
+    def test_resource_query_resolves_lowercase_operation_name(self) -> None:
+        args = SimpleNamespace(
+            service="EIP",
+            operation="showpublicip",
+            param=["publicip_id=eip-1"],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["operation"], "ShowPublicip")
+        self.assertEqual(result["requested_operation"], "showpublicip")
+        self.assertIn("--arg=--publicip_id=eip-1", result["command"])
+
+    def test_resource_query_builds_vpc_show_command(self) -> None:
+        args = SimpleNamespace(
+            service="VPC",
+            operation="showvpc",
+            param=["vpc_id=vpc-1"],
+            arg=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            execute=False,
+            timeout=1,
+            allow_sensitive_read=False,
+        )
+
+        result = hcloud_resource_query.build_plan(args)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["operation_scope"], "resource_query")
+        self.assertEqual(result["operation"], "ShowVpc")
+        self.assertIn("--arg=--vpc_id=vpc-1", result["command"])
+
     def test_resource_query_rejects_missing_required_param(self) -> None:
         args = SimpleNamespace(
             service="CCE",
@@ -188,8 +230,43 @@ class MultiServiceToolsTest(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         checks = result["services"][0]["checks"]
-        self.assertEqual({item["operation"] for item in checks}, {"ListVpcs", "ListSubnets", "ListSecurityGroups", "ListSecurityGroupRules", "ListVpcPeerings"})
-        self.assertTrue(all(item["runner"] == "scripts/hcloud_resource_discovery.py" for item in checks))
+        self.assertEqual(
+            {item["operation"] for item in checks},
+            {
+                "ListVpcs",
+                "ListSubnets",
+                "ListSecurityGroups",
+                "ListSecurityGroupRules",
+                "ListVpcPeerings",
+                "ShowVpc",
+                "ShowSubnet",
+                "ShowSecurityGroup",
+            },
+        )
+        skipped = [item for item in checks if item.get("skipped")]
+        self.assertEqual({item["operation"] for item in skipped}, {"ShowVpc", "ShowSubnet", "ShowSecurityGroup"})
+        planned = [item for item in checks if not item.get("skipped")]
+        self.assertTrue(all(item["runner"] == "scripts/hcloud_resource_discovery.py" for item in planned))
+
+    def test_service_readiness_default_includes_high_frequency_profiles(self) -> None:
+        args = SimpleNamespace(
+            service=None,
+            target=[],
+            region="cn-north-4",
+            project_id="project-1",
+            profile=None,
+            limit=20,
+            execute=False,
+            timeout=1,
+            strict=True,
+            require_all=False,
+        )
+
+        result = hcloud_service_readiness.build_readiness(args)
+
+        self.assertTrue(result["success"], result)
+        services = [item["service"] for item in result["services"]]
+        self.assertEqual(services[:10], ["ECS", "VPC", "RDS", "IMS", "EVS", "EIP", "ELB", "NAT", "KPS", "IAM"])
 
     def test_service_readiness_skips_target_dependent_checks(self) -> None:
         args = SimpleNamespace(
@@ -209,14 +286,17 @@ class MultiServiceToolsTest(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         skipped = [item for item in result["services"][0]["checks"] if item.get("skipped")]
-        self.assertEqual(len(skipped), 1)
-        self.assertEqual(skipped[0]["operation"], "ListMembers")
-        self.assertEqual(skipped[0]["missing_targets"], ["pool_id"])
+        self.assertEqual(
+            {item["operation"] for item in skipped},
+            {"ShowLoadBalancer", "ShowListener", "ShowPool", "ListMembers", "ShowMember"},
+        )
+        member_check = next(item for item in skipped if item["operation"] == "ShowMember")
+        self.assertEqual(member_check["missing_targets"], ["pool_id", "member_id"])
 
     def test_service_readiness_uses_targets_for_member_checks(self) -> None:
         args = SimpleNamespace(
             service=["ELB"],
-            target=["pool_id=pool-1"],
+            target=["pool_id=pool-1", "member_id=member-1", "loadbalancer_id=lb-1", "listener_id=listener-1"],
             region="cn-north-4",
             project_id="project-1",
             profile=None,
@@ -234,6 +314,9 @@ class MultiServiceToolsTest(unittest.TestCase):
         self.assertFalse(member_check["skipped"])
         self.assertEqual(member_check["runner"], "scripts/hcloud_resource_query.py")
         self.assertIn("--arg=--pool_id=pool-1", member_check["plan"]["command"])
+        show_member_check = next(item for item in result["services"][0]["checks"] if item["operation"] == "ShowMember")
+        self.assertFalse(show_member_check["skipped"])
+        self.assertIn("--arg=--member_id=member-1", show_member_check["plan"]["command"])
 
     def test_service_readiness_non_strict_execute_allows_execution_failures(self) -> None:
         args = SimpleNamespace(
@@ -415,6 +498,22 @@ class MultiServiceToolsTest(unittest.TestCase):
         result = hcloud_resource_verify.verify_payload(args, payload)
 
         self.assertTrue(result["success"], result)
+
+    def test_resource_verify_collects_singular_high_frequency_shapes(self) -> None:
+        cases = [
+            ("VPC", {"vpc": {"id": "vpc-1", "status": "OK"}}),
+            ("ELB", {"loadbalancer": {"id": "lb-1", "provisioning_status": "ACTIVE"}}),
+            ("EVS", {"volume": {"id": "vol-1", "status": "available"}}),
+            ("NAT", {"dnat_rule": {"id": "dnat-1", "status": "ACTIVE"}}),
+            ("IMS", {"image": {"id": "img-1", "status": "active"}}),
+            ("KPS", {"keypair": {"keypair_name": "key-1"}}),
+        ]
+
+        for service, payload in cases:
+            with self.subTest(service=service):
+                resources = hcloud_resource_verify.collect_dicts(payload, service)
+
+                self.assertEqual(len(resources), 1)
 
     def test_resource_verify_collects_top_level_rds_configuration(self) -> None:
         payload = {
