@@ -297,6 +297,7 @@ python3 scripts/hcloud_resource_discovery.py \
 - 按 `references/service-registry.json` 生成 list-only 查询命令
 - 对 ECS / IAM / VPC / IMS / KPS / EIP / ELB / EVS / NAT / RDS 等服务做创建前依赖发现
 - `resource_query_operations` 是已知资源 ID 后的查询线索，不会被通用 discovery 默认执行
+- 如果 registry 声明了 `supported_cli_regions`，脚本会把不支持的 `--region` 调整到 `preferred_cli_region`，例如 CDN discovery 使用 `cn-north-1`
 - 默认只生成计划；只有显式 `--execute` 才执行查询
 
 ### 9. 通用变更风险计划
@@ -316,7 +317,64 @@ python3 scripts/hcloud_change_plan.py \
 - 生成 dry-run/submit 命令
 - 在真实执行前明确确认、费用、范围和验证要求
 
-### 10. 离线问题集回归
+### 10. 多服务只读 smoke
+
+```bash
+python3 scripts/hcloud_readonly_smoke.py \
+  --service EIP \
+  --service VPC \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 按 registry 为多个服务生成最小只读查询计划
+- 显式 `--execute` 时才通过 `hcloud_safe_exec.py` 运行只读查询
+- 对 CDN 这类有固定 KooCLI 区域集合的服务，会沿用 discovery 的区域解析结果
+- 默认不把 live 查询失败当成脚本失败；需要严格失败门槛时加 `--strict`
+
+### 11. 服务级变更计划
+
+```bash
+python3 scripts/hcloud_service_change_plan.py \
+  --service EIP \
+  --operation CreatePublicip \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 为 EIP / VPC / ELB / EVS / RDS / NAT / DNS / SCM / CDN 等服务生成 planner-only 变更计划
+- 继承 `hcloud_change_plan.py` 的风险分类、dry-run/submit 命令和确认门禁
+- 附加服务上下文、known limits 和后置验证建议
+- 对 registry 声明的 `supported_cli_regions` 同样生效，避免为 CDN 这类服务生成已知不可用的区域命令
+- 不执行真实变更；submit 命令必须单独获得用户确认后才可运行
+
+### 12. 多服务资源验收
+
+```bash
+python3 scripts/hcloud_resource_verify.py \
+  --service EIP \
+  --json-file=<safe-exec-result.json> \
+  --target-id=<publicip-id> \
+  --expect-status BIND_ACTIVE \
+  --expect-bound-to=<target-port-or-instance-id> \
+  --require-match \
+  --pretty
+```
+
+用途：
+
+- 从 `hcloud_safe_exec.py` JSON 结果或原始服务 JSON 中提取资源列表
+- 验证 EIP / VPC / ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM 的目标 ID、名称、状态、CIDR 或绑定关系
+- 对 ELB 等双状态资源，可用 `--expect-field operating_status=ONLINE` 检查特定字段
+- 只做验收判定，不访问云端；真实查询仍由 `hcloud_safe_exec.py` 或 discovery 脚本负责
+
+### 13. 离线问题集回归
 
 ```bash
 python3 scripts/check_question_coverage.py --pretty
@@ -328,6 +386,7 @@ python3 scripts/check_question_coverage.py --pretty
 - 用 `hcloud_change_plan.py` 回归验证读、改、删操作的风险分类
 - 汇总问题集中 operation 对 service registry 的覆盖情况
 - 如果 `data-by-changping/data.xlsx` 存在，也会检查人工 E2E 问题和验证方法，抽取验证步骤里的服务/operation，标出外部探测和带副作用的验证步骤
+- 默认按 10% registry 覆盖率做最低门槛；可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整
 - 默认读取相邻项目的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`；单独使用本 skill 时可用 `--questions-dir` 指定路径
 
 ## 默认执行规则
@@ -356,8 +415,9 @@ python3 scripts/check_question_coverage.py --pretty
 - service registry、只读资源发现、通用变更风险计划、run journal、材料漂移检查和问题集回归检查
 - VPC / IMS / KPS / IAM / EIP 创建前只读发现方法
 - ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 的低覆盖查询登记，用于离线数据集回归和前置发现
+- 多服务只读 smoke、planner-only 变更计划和 JSON 结果验收脚本
 
-当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS、EIP 主要提供工作流和发现方法；对 ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM、CES 只提供低覆盖查询登记，不承诺已经沉淀了全量稳定 operation 清单。
+当前首版对 ECS 的 guidance 最完整。对 IAM、VPC、IMS、KPS、EIP 主要提供工作流和发现方法；对 ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM、CES 只提供低覆盖查询登记和 planner-only 计划，不承诺已经沉淀了全量稳定 operation 清单。
 
 当前首版已经补了本地 meta cache 发现脚本和创建类示例模板；非 ECS 服务的 operation detail 缓存可能不完整，脚本会在缺少参数元数据时保守省略可选参数。
 

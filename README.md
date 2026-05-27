@@ -43,7 +43,7 @@
 - ELB / EVS / NAT / RDS：已登记常用只读 operation，适合做初步发现；本地缺少 operation detail 时会保守省略可选参数
 - CCE / CDN / DNS / SCM / CES：已按离线验证集登记最小查询入口，当前只作为低覆盖验证和发现线索
 
-这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。`service-registry.json` 中的 `resource_query_operations` 只表示“已知资源 ID 后可查询”，不会被通用 discovery 默认执行。
+这些非 ECS 链路适合用于真实变更前的上下文确认、资源发现和风险边界梳理；在本地 operation 元数据不完整时，不应宣称已经具备和 ECS 一样完整的参数级执行能力。`service-registry.json` 中的 `resource_query_operations` 只表示“已知资源 ID 后可查询”，不会被通用 discovery 默认执行。对 CDN 这类 KooCLI 只接受固定区域集合的服务，registry 会记录 `supported_cli_regions` 和 `preferred_cli_region`，discovery/smoke 会据此生成可执行的查询命令。
 
 ## 在常用 Agent 中使用
 
@@ -103,6 +103,7 @@ Codex 环境中使用时，推荐把本目录作为一个完整 skill 安装到 
 2. 在 Codex 对话或项目说明中明确：华为云 CLI 任务优先使用 `huaweicloud-skill`。
 3. 让 Codex 先读取 `SKILL.md`，再按 `references/workflow.md` 执行。
 4. 查询类任务优先走 `scripts/hcloud_safe_exec.py`；ECS 创建类任务优先走 `scripts/hcloud_ecs_create_plan.py`，真实提交后继续走 `scripts/hcloud_ecs_wait_job.py` 和 `scripts/hcloud_ecs_verify_active.py`。
+5. 非 ECS 服务变更类任务优先走 `scripts/hcloud_service_change_plan.py`，它只生成计划和确认门禁，不直接提交变更；服务级区域限制会从 registry 继承。
 
 示例提示词：
 
@@ -157,7 +158,10 @@ huaweicloud-skill/
 │   ├── hcloud_prewarm_cache.py     # 缓存预热
 │   ├── hcloud_meta_lookup.py       # 本地元数据查询
 │   ├── hcloud_resource_discovery.py # service registry 驱动的只读资源发现
+│   ├── hcloud_readonly_smoke.py     # 多服务只读 smoke 查询计划/执行
 │   ├── hcloud_change_plan.py        # 通用变更风险计划
+│   ├── hcloud_service_change_plan.py # 服务级 planner-only 变更计划
+│   ├── hcloud_resource_verify.py     # 多服务 JSON 结果验收
 │   ├── hcloud_run_journal.py        # JSONL run journal
 │   ├── check_materials_drift.py     # references 与 materials 漂移检查
 │   ├── check_question_coverage.py   # generated_questions 和 data.xlsx 离线回归检查
@@ -209,9 +213,11 @@ huaweicloud-skill/
 python3 -m unittest discover tests
 python3 scripts/check_materials_drift.py --pretty
 python3 scripts/check_question_coverage.py --pretty
+python3 scripts/hcloud_readonly_smoke.py --service EIP --service VPC --region=<region> --project-id=<project-id> --pretty
+python3 scripts/hcloud_readonly_smoke.py --service CDN --region=<region> --project-id=<project-id> --execute --strict --pretty
 ```
 
-`check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。
+`check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。默认每个出现在问题集里的服务至少需要 10% registry 覆盖率，可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整。
 
 ## 前置条件
 

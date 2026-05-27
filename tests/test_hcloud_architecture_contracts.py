@@ -291,7 +291,19 @@ class ArchitectureContractsTest(unittest.TestCase):
         self.assertTrue(result["success"], result)
         self.assertEqual(result["schema_errors"], [])
         self.assertEqual(result["risk_errors"], [])
+        self.assertEqual(result["coverage_errors"], [])
         self.assertEqual(result["unique_risk_summary"]["high"], 2)
+
+    def test_question_coverage_can_fail_registry_threshold(self) -> None:
+        counters = {
+            "ECS": check_question_coverage.collections.Counter({"total": 10, "registered": 1}),
+        }
+
+        result = check_question_coverage.coverage_errors_from_registry(counters, {"ECS": 0.5}, 0.1)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["service"], "ECS")
+        self.assertEqual(result[0]["registered_ratio"], 0.1)
 
     def test_validation_workbook_extracts_service_operations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -36,11 +36,33 @@ def operation_param_names(service: str, operation: str) -> set[str]:
     return names
 
 
+def resolve_cli_region(args: argparse.Namespace, service_entry: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve the cli-region for services with curated supported regions."""
+    requested_region = args.region
+    supported_regions = service_entry.get("supported_cli_regions", [])
+    preferred_region = service_entry.get("preferred_cli_region")
+    if not supported_regions:
+        return requested_region, None
+
+    if requested_region in supported_regions:
+        return requested_region, None
+
+    resolved_region = preferred_region or supported_regions[0]
+    reason = "requested_region_not_supported" if requested_region else "explicit_supported_region_required"
+    return resolved_region, {
+        "requested_region": requested_region,
+        "resolved_region": resolved_region,
+        "supported_regions": supported_regions,
+        "reason": reason,
+    }
+
+
 def build_safe_exec_command(
     args: argparse.Namespace,
     service: str,
     operation: str,
     param_names: set[str],
+    cli_region: str | None,
 ) -> tuple[list[str], list[str]]:
     """Build a JSON-friendly safe_exec command for one list-only operation."""
     command = [
@@ -55,8 +77,8 @@ def build_safe_exec_command(
     ]
     if args.profile:
         command.append(f"--arg=--cli-profile={args.profile}")
-    if args.region:
-        command.append(f"--arg=--cli-region={args.region}")
+    if cli_region:
+        command.append(f"--arg=--cli-region={cli_region}")
     if args.project_id:
         command.append(f"--arg=--project_id={args.project_id}")
     omitted_args: list[str] = []
@@ -68,14 +90,17 @@ def build_safe_exec_command(
     return command, omitted_args
 
 
-def build_command_item(args: argparse.Namespace, service: str, operation: str) -> dict[str, Any]:
+def build_command_item(args: argparse.Namespace, service: str, operation: str, service_entry: dict[str, Any]) -> dict[str, Any]:
     """Build one discovery command item with metadata-driven optional arguments."""
-    command, omitted_args = build_safe_exec_command(args, service, operation, operation_param_names(service, operation))
+    cli_region, region_resolution = resolve_cli_region(args, service_entry)
+    command, omitted_args = build_safe_exec_command(args, service, operation, operation_param_names(service, operation), cli_region)
     item: dict[str, Any] = {
         "service": service,
         "operation": operation,
         "command": command,
     }
+    if region_resolution:
+        item["region_resolution"] = region_resolution
     if omitted_args:
         item["omitted_args"] = omitted_args
         item["omitted_reason"] = "Operation metadata does not list these parameters."
@@ -107,7 +132,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
             }
         operations = [args.operation]
 
-    commands = [build_command_item(args, service, operation) for operation in operations]
+    commands = [build_command_item(args, service, operation, service_entry) for operation in operations]
     return {
         "success": True,
         "mode": "execute" if args.execute else "plan",

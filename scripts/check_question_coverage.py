@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_QUESTIONS_DIR = ROOT.parent / "agent_with_massive_apis" / "data" / "huawei_cloud" / "generated_questions"
 DEFAULT_XLSX_PATH = ROOT.parent / "agent_with_massive_apis" / "data" / "huawei_cloud" / "data-by-changping" / "data.xlsx"
 REGISTRY_PATH = ROOT / "references" / "service-registry.json"
+DEFAULT_MIN_REGISTERED_RATIO = 0.10
 
 XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 XLSX_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -133,6 +134,53 @@ def iter_question_files(questions_dir: Path) -> list[tuple[str, Path]]:
 def expected_crud_type(path: Path) -> str:
     """Infer expected CRUD type from a file name like ecs_update.json."""
     return path.stem.rsplit("_", 1)[-1]
+
+
+def parse_min_registered_ratios(values: list[str]) -> dict[str, float]:
+    """Parse service coverage thresholds from SERVICE=RATIO strings."""
+    ratios: dict[str, float] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError(f"Invalid ratio threshold, expected SERVICE=RATIO: {value}")
+        service, raw_ratio = value.split("=", 1)
+        try:
+            ratio = float(raw_ratio)
+        except ValueError as exc:
+            raise ValueError(f"Invalid ratio value for {service}: {raw_ratio}") from exc
+        if ratio < 0 or ratio > 1:
+            raise ValueError(f"Ratio must be between 0 and 1 for {service}: {raw_ratio}")
+        ratios[service.upper()] = ratio
+    return ratios
+
+
+def coverage_errors_from_registry(
+    registry_by_service: dict[str, collections.Counter[str]],
+    thresholds: dict[str, float],
+    default_threshold: float | None,
+) -> list[dict[str, Any]]:
+    """Return services whose registered operation ratio is below threshold."""
+    errors: list[dict[str, Any]] = []
+    for service, counter in sorted(registry_by_service.items()):
+        total = counter.get("total", 0)
+        if not total:
+            continue
+        threshold = thresholds.get(service, default_threshold)
+        if threshold is None:
+            continue
+        registered = counter.get("registered", 0)
+        ratio = registered / total
+        if ratio < threshold:
+            errors.append(
+                {
+                    "service": service,
+                    "registered": registered,
+                    "total": total,
+                    "registered_ratio": round(ratio, 4),
+                    "min_registered_ratio": threshold,
+                    "error": "Registry coverage ratio is below threshold.",
+                }
+            )
+    return errors
 
 
 def cell_column_index(cell_ref: str) -> int:
@@ -397,6 +445,8 @@ def analyze_questions(
     questions_dir: Path,
     registry_path: Path = REGISTRY_PATH,
     xlsx_path: Path | None = DEFAULT_XLSX_PATH,
+    min_registered_ratios: dict[str, float] | None = None,
+    default_min_registered_ratio: float | None = DEFAULT_MIN_REGISTERED_RATIO,
 ) -> dict[str, Any]:
     """Analyze generated question files for schema, risk, registry, and workbook coverage."""
     if not questions_dir.exists():
@@ -515,14 +565,22 @@ def analyze_questions(
     unique_risk_summary = collections.Counter(item["risk"] for item in unique_operations.values())
     xlsx_validation = analyze_validation_workbook(xlsx_path, registry_path) if xlsx_path is not None else None
     workbook_success = True if xlsx_validation is None else xlsx_validation["success"]
+    coverage_errors = coverage_errors_from_registry(
+        registry_by_service,
+        min_registered_ratios or {},
+        default_min_registered_ratio,
+    )
 
     return {
-        "success": not schema_errors and not type_errors and not risk_errors and workbook_success,
+        "success": not schema_errors and not type_errors and not risk_errors and not coverage_errors and workbook_success,
         "questions_dir": str(questions_dir),
         "files_checked": len(iter_question_files(questions_dir)),
         "schema_errors": schema_errors,
         "type_errors": type_errors,
         "risk_errors": risk_errors,
+        "coverage_errors": coverage_errors,
+        "default_min_registered_ratio": default_min_registered_ratio,
+        "min_registered_ratios": dict(sorted((min_registered_ratios or {}).items())),
         "weighted_risk_summary": dict(sorted(weighted_risk_summary.items())),
         "unique_operation_count": len(unique_operations),
         "unique_risk_summary": dict(sorted(unique_risk_summary.items())),
@@ -541,15 +599,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--xlsx-path", default=str(DEFAULT_XLSX_PATH), help="Optional path to data.xlsx validation data.")
     parser.add_argument("--skip-xlsx", action="store_true", help="Do not analyze data.xlsx validation data.")
     parser.add_argument("--registry", default=str(REGISTRY_PATH), help="Path to service-registry.json.")
+    parser.add_argument(
+        "--default-min-registered-ratio",
+        type=float,
+        default=DEFAULT_MIN_REGISTERED_RATIO,
+        help="Default minimum registry coverage ratio for services present in generated_questions. Use -1 to disable.",
+    )
+    parser.add_argument(
+        "--min-registered-ratio",
+        action="append",
+        default=[],
+        help="Per-service registry coverage threshold as SERVICE=RATIO. Can be repeated.",
+    )
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.default_min_registered_ratio < -1 or args.default_min_registered_ratio > 1:
+        parser.error("--default-min-registered-ratio must be between 0 and 1, or -1 to disable.")
+    return args
 
 
 def main() -> int:
     """Run the generated question coverage check."""
     args = parse_args()
     xlsx_path = None if args.skip_xlsx else Path(args.xlsx_path)
-    result = analyze_questions(Path(args.questions_dir), Path(args.registry), xlsx_path)
+    try:
+        min_registered_ratios = parse_min_registered_ratios(args.min_registered_ratio)
+    except ValueError as exc:
+        result = {"success": False, "error": str(exc)}
+    else:
+        default_min = None if args.default_min_registered_ratio < 0 else args.default_min_registered_ratio
+        result = analyze_questions(
+            Path(args.questions_dir),
+            Path(args.registry),
+            xlsx_path,
+            min_registered_ratios=min_registered_ratios,
+            default_min_registered_ratio=default_min,
+        )
     if args.pretty:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
