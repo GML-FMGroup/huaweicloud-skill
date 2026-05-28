@@ -95,6 +95,25 @@ class ArchitectureContractsTest(unittest.TestCase):
                 self.assertTrue((ROOT / entry["resource_verifier"]).exists())
             if entry["change_operations"]:
                 self.assertTrue(entry["planner"] or entry["known_limits"], f"{service} change operation needs planner or limits")
+                flow = entry.get("change_flow")
+                if flow:
+                    self.assertTrue((ROOT / flow).exists(), f"{service} change_flow missing: {flow}")
+
+        services = registry["services"]
+        self.assertEqual(services["EIP"].get("change_flow"), "scripts/hcloud_eip_change_flow.py")
+        for service, entry in services.items():
+            if entry.get("change_flow") == "scripts/hcloud_eip_change_flow.py":
+                self.assertEqual(service, "EIP", f"{service} must not route to the EIP-specific flow")
+            if (
+                entry.get("planner") == "scripts/hcloud_service_change_plan.py"
+                and service != "EIP"
+                and entry.get("change_operations")
+            ):
+                self.assertEqual(
+                    entry.get("change_flow"),
+                    "scripts/hcloud_guarded_change_flow.py",
+                    f"{service} service planner changes should use the generic guarded flow",
+                )
 
     def test_resource_discovery_builds_json_friendly_commands(self) -> None:
         args = SimpleNamespace(
@@ -411,6 +430,36 @@ class ArchitectureContractsTest(unittest.TestCase):
         )
         self.assertEqual(
             result["operation_aliases_applied"]["RDS:ShowConfigurationDetail->ShowConfiguration"],
+            1,
+        )
+
+    def test_validation_workbook_tracks_guarded_change_execution_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workbook = Path(tmp_dir) / "data.xlsx"
+            write_minimal_xlsx(
+                workbook,
+                [
+                    ["问题", "验证方法"],
+                    ["Change VPC.", "1. 调用 VPC 变更工具（CreateSecurityGroupRule）生成风险门禁计划"],
+                    ["Change EIP.", "1. 调用 EIP 变更工具（UpdatePublicip）生成 EIP flow"],
+                    ["Change OBS.", "1. 调用 OBS 变更工具（PutBucketLifecycle）生成 planner"],
+                ],
+            )
+
+            result = check_question_coverage.analyze_validation_workbook(workbook)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["execution_path_error_count"], 0)
+        self.assertEqual(
+            result["executable_validation_paths"]["VPC:guarded_change:scripts/hcloud_guarded_change_flow.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["EIP:guarded_change:scripts/hcloud_eip_change_flow.py"],
+            1,
+        )
+        self.assertEqual(
+            result["executable_validation_paths"]["OBS:planner_only_change:scripts/hcloud_obs_change_plan.py"],
             1,
         )
 

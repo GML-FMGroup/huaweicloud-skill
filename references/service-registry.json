@@ -135,7 +135,7 @@
         "DeleteVpcPeering"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
-      "change_flow": "scripts/hcloud_eip_change_flow.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -250,6 +250,7 @@
         "NeutronDeleteFloatingIp"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_eip_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -315,6 +316,7 @@
         "DeleteHealthMonitor"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -360,6 +362,7 @@
         "DeleteSnapshot"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -406,6 +409,7 @@
         "DeleteNatGatewayDnatRule"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [],
@@ -472,6 +476,7 @@
         "SetConfiguration"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -529,6 +534,7 @@
         "DeleteDomain"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [],
@@ -558,6 +564,7 @@
         "DeleteRecordSet"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [],
@@ -584,6 +591,7 @@
         "DeleteCertificate"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_guarded_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [],

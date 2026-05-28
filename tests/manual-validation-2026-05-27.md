@@ -415,3 +415,38 @@ python3 scripts/hcloud_eip_change_flow.py \
 
 - 本验证没有创建、修改、绑定、解绑或删除任何 EIP。
 - 真实 EIP submit 仍需用户对具体 EIP、region、project、计费/网络影响、回滚方式和 dry-run 结果逐项确认。
+
+## 验证 11：P0 广度优先 guarded change flow
+
+### Command shape
+
+```bash
+python3 scripts/hcloud_guarded_change_flow.py \
+  --service VPC \
+  --operation CreateSecurityGroupRule \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_guarded_change_flow.py \
+  --service VPC \
+  --operation CreateSecurityGroupRule \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute-submit \
+  --pretty
+```
+
+### Result
+
+- 修复 registry 路由：`hcloud_eip_change_flow.py` 只挂在 EIP；VPC / ELB / EVS / NAT / RDS / CDN / DNS / SCM 使用 `hcloud_guarded_change_flow.py`。
+- 通用 guarded flow 默认只生成 service plan、dry-run/submit 命令和后置只读 smoke plan，不执行真实 submit。
+- 未带 `--confirm-submit` 时，即使传入 `--execute-submit`，脚本也返回 `submit_guard_failure`，没有执行真实变更。
+- 离线验证集现在把 change operation 的执行路径记为 `guarded_change` 或专用 `planner_only_change`，不再只看 planner 是否存在。
+
+### Notes
+
+- 本验证没有创建、修改、绑定、解绑或删除任何云资源。
+- 该 flow 是 P0 横向风险门禁，不代表每个服务都已经拥有完整业务语义 verifier；服务专用 verifier 仍需逐步补齐。

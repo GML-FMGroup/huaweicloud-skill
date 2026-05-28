@@ -30,6 +30,7 @@ def load_module(name: str, path: Path):
 
 hcloud_readonly_smoke = load_module("hcloud_readonly_smoke", SCRIPTS / "hcloud_readonly_smoke.py")
 hcloud_eip_change_flow = load_module("hcloud_eip_change_flow", SCRIPTS / "hcloud_eip_change_flow.py")
+hcloud_guarded_change_flow = load_module("hcloud_guarded_change_flow", SCRIPTS / "hcloud_guarded_change_flow.py")
 hcloud_obs_change_plan = load_module("hcloud_obs_change_plan", SCRIPTS / "hcloud_obs_change_plan.py")
 hcloud_obs_readonly = load_module("hcloud_obs_readonly", SCRIPTS / "hcloud_obs_readonly.py")
 hcloud_resource_detail_probe = load_module("hcloud_resource_detail_probe", SCRIPTS / "hcloud_resource_detail_probe.py")
@@ -59,6 +60,28 @@ class MultiServiceToolsTest(unittest.TestCase):
             "confirm_submit": False,
             "skip_dryrun": False,
             "execute_verify": False,
+            "timeout": 1,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def guarded_flow_args(self, **overrides):
+        """Return default generic guarded flow args for unit tests."""
+        values = {
+            "service": "VPC",
+            "operation": "CreateSecurityGroupRule",
+            "region": "cn-north-4",
+            "project_id": "project-1",
+            "profile": None,
+            "json_input_file": None,
+            "arg": ["--security_group_id=sg-1"],
+            "no_dryrun": False,
+            "allow_unregistered": False,
+            "execute_dryrun": False,
+            "execute_submit": False,
+            "confirm_submit": False,
+            "skip_dryrun": False,
+            "execute_readiness": False,
             "timeout": 1,
         }
         values.update(overrides)
@@ -220,6 +243,55 @@ class MultiServiceToolsTest(unittest.TestCase):
         self.assertEqual(result["verification"]["operation"], "ShowPublicip")
         dryrun_mock.assert_called_once()
         verify_mock.assert_called_once()
+
+    def test_guarded_change_flow_builds_generic_plan(self) -> None:
+        result = hcloud_guarded_change_flow.build_flow(self.guarded_flow_args())
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["planning_only"])
+        self.assertEqual(result["service"], "VPC")
+        command = result["service_plan"]["commands"]["dryrun_or_plan"]
+        self.assertIn("--arg=--cli-output=json", command)
+        self.assertIn("--expect-json", command)
+        self.assertIn("--arg=--dryrun", command)
+        self.assertIn("post_change_readiness_plan", result)
+
+    def test_guarded_change_flow_requires_submit_confirmation(self) -> None:
+        result = hcloud_guarded_change_flow.build_flow(
+            self.guarded_flow_args(execute_submit=True, execute_dryrun=True)
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["submit_guard_failure"]["error"], "Submit execution requires --confirm-submit.")
+        self.assertTrue(result["planning_only"])
+
+    def test_guarded_change_flow_executes_dryrun_and_readiness_with_mocks(self) -> None:
+        with patch.object(
+            hcloud_guarded_change_flow,
+            "execute_command",
+            return_value={"success": True, "parsed_json": {"ok": True}},
+        ) as dryrun_mock, patch.object(
+            hcloud_guarded_change_flow.hcloud_resource_discovery,
+            "execute_plan",
+            return_value={"success": True, "results": []},
+        ) as readiness_mock:
+            result = hcloud_guarded_change_flow.build_flow(
+                self.guarded_flow_args(execute_dryrun=True, execute_readiness=True)
+            )
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["dryrun"]["success"])
+        self.assertTrue(result["post_change_readiness"]["success"])
+        dryrun_mock.assert_called_once()
+        readiness_mock.assert_called_once()
+
+    def test_guarded_change_flow_rejects_delegated_planner(self) -> None:
+        result = hcloud_guarded_change_flow.build_flow(
+            self.guarded_flow_args(service="OBS", operation="CreateBucket")
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["service_plan"]["delegated_planner"], "scripts/hcloud_obs_change_plan.py")
 
     def test_resource_query_builds_vpc_show_command(self) -> None:
         args = SimpleNamespace(

@@ -85,6 +85,7 @@
 - CDN `ListDomains` 已验证需要使用 KooCLI 支持区域；registry 会把 `cn-north-4` 调整到 `cn-north-1`
 - `hcloud_service_change_plan.py` 可以为多服务变更生成风险计划和验证建议，但不会执行 submit
 - `hcloud_eip_change_flow.py` 可以把 EIP 变更串成 Plan -> dry-run -> guarded submit -> ShowPublicip verify；默认不执行 submit，且 submit 必须显式确认
+- `hcloud_guarded_change_flow.py` 可以为 VPC、ELB、EVS、NAT、RDS、CDN、DNS、SCM 等普通服务提供通用 Plan -> dry-run -> guarded submit -> read-only smoke 的 P0 门禁；默认不执行 submit
 - `hcloud_resource_verify.py` 可以基于 JSON 查询结果验证 EIP、VPC、ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM 等资源状态
 - `check_question_coverage.py` 可用外部 `generated_questions` 和 `data-by-changping/data.xlsx` 回归验证 schema、CRUD type、风险分类、registry 覆盖、人工验证步骤风险线索和已注册验证 operation 的执行路径
 
@@ -108,6 +109,7 @@
 - 先用 service 级 discovery 和 playbook 梳理动作
 - 已知资源 ID 时，可用 `hcloud_resource_query.py` 做第一层详情查询
 - EIP 变更优先用 `hcloud_eip_change_flow.py` 生成计划、dry-run 和 `ShowPublicip` 后置验证；真实 submit 需要单独确认
+- VPC 变更可用 `hcloud_guarded_change_flow.py` 生成通用门禁计划和只读 smoke 后验计划；真实 submit 需要单独确认
 - 把真实变更执行建立在进一步元数据可用之后
 
 ### 当用户任务在 ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 范围内
@@ -117,7 +119,7 @@
 - 先确认本地 `hcloud <service> --help` 是否能拿到 operation 帮助
 - 优先执行 list/count 类低风险查询；已知目标 ID 时可用 `hcloud_resource_query.py` 执行目标型 show/list 查询
 - 多服务现状检查优先用 `hcloud_service_readiness.py`，目标型检查缺参数时应明确 skipped，而不是猜测资源 ID
-- 涉及创建、绑定、扩容、停用、删除、证书部署、集群变更等动作时，先补专门 planner 和验证器
+- 涉及创建、绑定、扩容、停用、删除、证书部署等动作时，先用 `hcloud_guarded_change_flow.py` 走通用风险门禁；集群变更等未登记 change operation 仍需要先补专门 planner 和验证器
 
 不要伪装成已经有了和 ECS 一样完整的操作细节。
 

@@ -144,10 +144,11 @@ def load_registry_execution_paths(path: Path = REGISTRY_PATH) -> dict[str, dict[
                 "runner": resource_query_runner,
             }
         for operation in entry.get("change_operations", []):
+            change_flow = entry.get("change_flow")
             service_paths[normalize_operation(operation)] = {
                 "operation": operation,
-                "scope": "planner_only_change",
-                "runner": entry.get("planner") or "missing_planner",
+                "scope": "guarded_change" if change_flow else "planner_only_change",
+                "runner": change_flow or entry.get("planner") or "missing_planner",
             }
         execution_paths[service_key] = service_paths
     return execution_paths
