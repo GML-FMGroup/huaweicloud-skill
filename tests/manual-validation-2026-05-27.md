@@ -341,6 +341,32 @@ python3 scripts/hcloud_resource_detail_probe.py \
 - EVS/NAT detail 能力已工具化，后续账号/区域出现资源时会自动执行 detail 查询。
   - CCE `ShowCluster/ListNodes` 和 CDN `ShowDomain` 因缺少目标 ID 被正确跳过。
 
+### Retest After OBS Credential Configuration
+
+用户重新配置 obsutil AK/SK 后，重新执行以下只读验证：
+
+```bash
+python3 scripts/hcloud_obs_readonly.py \
+  --operation ListBuckets \
+  --limit=20 \
+  --execute \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_obs_readonly.py \
+  --operation StatBucket \
+  --bucket=<bucket-name> \
+  --execute \
+  --pretty
+```
+
+结果：
+
+- OBS `ListBuckets` 成功，summary 中 `bucket_count=1`。
+- OBS `StatBucket` 成功，确认 bucket-scoped 只读路径也可执行。
+- 该结果说明此前 `InvalidAccessKeyId` 是 OBS obsutil 配置问题，不是 `hcloud obs` 命令形态或 adapter 问题。
+
 ### Follow-up Fix
 
 - readiness 的非 strict 执行模式现在只放过云端执行失败，不再掩盖 plan 阶段失败。

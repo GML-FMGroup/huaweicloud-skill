@@ -236,6 +236,52 @@ python3 scripts/hcloud_readonly_smoke.py --service CDN --region=<region> --proje
 - Python 3.12+
 - 已配置华为云认证（AK/SK 或 profile）
 
+## 用户协助配置项
+
+Agent 可以自动发现命令、生成计划、执行只读查询和做结果校验，但以下凭证和环境项需要用户提前配置或授权提供。
+
+### 普通 hcloud OpenAPI 服务
+
+适用于 ECS、VPC、RDS、EIP、ELB、EVS、IMS、NAT、DNS、SCM、CES、CCE 等普通 `hcloud <Service> <Operation>` 命令。
+
+- 已登录或已配置可用的 KooCLI profile。
+- 默认或显式传入 `--cli-region`。
+- 需要项目级 API 时，配置或传入对应 `project_id`。
+- 账号需要具备目标服务的只读权限；变更类任务还需要对应写权限。
+
+建议先用以下命令检查上下文：
+
+```bash
+python3 scripts/hcloud_context_inspect.py --pretty
+```
+
+### OBS hcloud obs / obsutil
+
+OBS 不走普通 `hcloud OBS <Operation>` 元数据路径，而是使用 KooCLI 集成的 `hcloud obs`/obsutil 命令，因此需要单独确认 OBS 配置。
+
+用户需要协助提供或完成：
+
+- 有效的 OBS AK/SK；临时凭证还需要 security token。
+- 正确的 OBS endpoint，例如与 bucket 所在站点匹配的 endpoint。
+- 如果使用非默认 obsutil 配置文件，需要告知 `--config <path>`。
+- 如果访问 requester-pays bucket，需要告知 payer 设置。
+
+可用以下命令配置或检查 OBS 认证；不要把真实 AK/SK/token 写进仓库或发到对话里：
+
+```bash
+hcloud obs config -i=<AK> -k=<SK> -e=<OBS endpoint>
+hcloud obs ls
+```
+
+本 skill 的只读验证入口：
+
+```bash
+python3 scripts/hcloud_obs_readonly.py --operation ListBuckets --limit=20 --execute --pretty
+python3 scripts/hcloud_obs_readonly.py --operation StatBucket --bucket=<bucket-name> --execute --pretty
+```
+
+如果看到 `InvalidAccessKeyId` 或 `SignatureDoesNotMatch`，通常是 OBS AK/SK/token 或 endpoint 配置问题；普通 `hcloud configure` 能查询 ECS/VPC，不代表 `hcloud obs` 一定已经配置正确。
+
 ## License
 
 [MIT](LICENSE)
