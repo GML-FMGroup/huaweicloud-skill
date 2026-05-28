@@ -1,6 +1,6 @@
 # huaweicloud-skill Developer Documentation
 
-本目录是 `huaweicloud-skill` 的开发者文档，解释这个 skill 的架构、设计取舍、关键实现和数据资产。这里的文档面向维护者、二次开发者和项目汇报，不作为 agent 的运行时指令入口。
+本目录是 `huaweicloud-skill` 的开发者文档，解释这个 skill 的架构、设计取舍、关键实现和数据资产。这里的文档面向维护者和二次开发者，不作为 agent 的运行时指令入口。
 
 运行时入口仍然是：
 
@@ -13,9 +13,9 @@
 
 建议按下面顺序阅读：
 
-1. [executive-summary.md](executive-summary.md)
-   - 面向汇报，快速讲清楚这个 skill 解决什么问题、架构亮点、当前贡献和下一步路线。
-   - 适合给老板、协作方或新同学建立第一印象。
+1. [technical-overview.md](technical-overview.md)
+   - 快速了解这个 skill 的技术定位、架构平面、核心优势和当前能力边界。
+   - 适合第一次接手实现、评审架构或规划扩展路线时阅读。
 2. [architecture.md](architecture.md)
    - 了解整体分层、执行链路、模块边界。
    - 适合第一次接手本项目时阅读。
@@ -26,15 +26,15 @@
    - 了解 `references/`、`materials/`、`service-registry.json`、外部问题集和测试之间的关系。
    - 适合扩展服务覆盖或调整数据集门禁时阅读。
 
-## 汇报口径
+## 技术主线
 
-如果需要向非维护者解释这个项目，建议使用下面这条主线：
+阅读和维护本项目时，建议抓住下面这条技术主线：
 
 1. 这不是普通 prompt，而是一个围绕华为云 KooCLI 的可执行云操作框架。
 2. 核心架构是 registry 控制面、safe exec 执行面、verifier 验证面、dataset 回归面。
 3. v0.2 已从 ECS 单点闭环扩展到 16 个服务的多服务覆盖，其中 146 个 list/query operation、61 个资源级 query operation、80 个 change operation 被纳入机器可读 registry。
 4. 写类操作默认不自动提交，而是走 plan、dry-run、显式确认和后置验证，适合真实云资源场景的风险控制。
-5. 外部问题集和 Excel E2E 验证集不是展示材料，而是回归门禁，用来持续防止 coverage 和安全边界退化。
+5. 外部问题集和 Excel E2E 验证集是回归门禁，用来持续防止 coverage 和安全边界退化。
 
 ## 文档边界
 
