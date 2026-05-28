@@ -31,7 +31,21 @@ python3 scripts/hcloud_resource_discovery.py \
   --pretty
 ```
 
-3. 对创建或绑定后的 JSON 结果做资源验收：
+3. 对 EIP 变更生成守护式 flow：
+
+```bash
+python3 scripts/hcloud_eip_change_flow.py \
+  --operation UpdatePublicip \
+  --publicip-id=<publicip-id> \
+  --arg=--publicip_id=<publicip-id> \
+  --region=<region> \
+  --project-id=<project-id> \
+  --pretty
+```
+
+默认只输出计划和 `ShowPublicip` 验证计划；真实提交必须先执行 dry-run，再由用户确认具体 EIP、计费/网络影响和回滚方式。
+
+4. 对创建或绑定后的 JSON 结果做资源验收：
 
 ```bash
 python3 scripts/hcloud_resource_verify.py \

@@ -40,7 +40,7 @@
 - VPC：VPC、子网、安全组等 list 发现，并支持 `ShowVpc` / `ShowSubnet` / `ShowSecurityGroup` 等目标查询
 - IMS：镜像列表、OS 版本和 `GlanceShowImage` 镜像详情路径
 - KPS：密钥对列表和 `ListKeypairDetail` 详情路径
-- EIP：EIP、带宽、公网 IP 池、配额等 list/count 型发现入口，以及 `ShowPublicip`
+- EIP：EIP、带宽、公网 IP 池、配额等 list/count 型发现入口，`ShowPublicip`，以及带确认门禁的 Plan -> Apply -> Verify 参考 flow
 - ELB / EVS / NAT / RDS：已登记常用 list 查询和第一层 show/detail 查询；本地缺少 operation detail 时通过显式参数白名单保守执行
 - CCE / CDN / DNS / SCM / CES：已按离线验证集登记最小查询入口；其中 CDN、DNS、SCM、CCE 已支持部分目标型查询
 - OBS：不走普通 `hcloud <Service> <Operation>` 元数据路径，改用 KooCLI 集成的 `hcloud obs`/obsutil 适配器，支持 bucket list、bucket stat、lifecycle/policy get 和 planner-only lifecycle/policy/bucket 变更计划
@@ -161,6 +161,7 @@ huaweicloud-skill/
 │   ├── hcloud_meta_lookup.py       # 本地元数据查询
 │   ├── hcloud_resource_discovery.py # service registry 驱动的只读资源发现
 │   ├── hcloud_resource_query.py     # 显式参数的资源级只读查询
+│   ├── hcloud_eip_change_flow.py      # EIP Plan -> Apply -> Verify 守护流程
 │   ├── hcloud_obs_readonly.py        # OBS hcloud obs/obsutil 只读适配器
 │   ├── hcloud_obs_change_plan.py     # OBS planner-only 变更计划
 │   ├── hcloud_resource_detail_probe.py # list-then-detail 只读抽样
@@ -223,12 +224,17 @@ python3 scripts/check_question_coverage.py --pretty
 python3 scripts/hcloud_readonly_smoke.py --service EIP --service VPC --region=<region> --project-id=<project-id> --pretty
 python3 scripts/hcloud_service_readiness.py --service VPC --service ELB --region=<region> --project-id=<project-id> --pretty
 python3 scripts/hcloud_resource_query.py --service EIP --operation ShowPublicip --param publicip_id=<publicip-id> --region=<region> --project-id=<project-id> --pretty
+python3 scripts/hcloud_eip_change_flow.py --operation UpdatePublicip --publicip-id=<publicip-id> --arg=--publicip_id=<publicip-id> --region=<region> --project-id=<project-id> --pretty
 python3 scripts/hcloud_obs_readonly.py --operation ListBuckets --limit=20 --pretty
 python3 scripts/hcloud_resource_detail_probe.py --service EVS --service NAT --region=<region> --execute --pretty
 python3 scripts/hcloud_readonly_smoke.py --service CDN --region=<region> --project-id=<project-id> --execute --strict --pretty
 ```
 
 `check_question_coverage.py` 默认读取相邻项目中的 `agent_with_massive_apis/data/huawei_cloud/generated_questions`，并在存在时读取 `agent_with_massive_apis/data/huawei_cloud/data-by-changping/data.xlsx`。如果只单独 checkout 本 skill 仓库，可用 `--questions-dir` 和 `--xlsx-path` 指向本地数据路径，或用 `--skip-xlsx` 跳过 Excel 验证集。默认每个出现在问题集里的服务至少需要 10% registry 覆盖率，可用 `--default-min-registered-ratio` 或 `--min-registered-ratio SERVICE=RATIO` 调整。Excel 验证集里的已注册 operation 还会检查是否存在可执行路径：普通 list 查询走 registry 的 `query_runner`，需要资源 ID 的 show/list 查询走 `resource_query_runner`，变更类只允许 planner-only。
+
+`hcloud_safe_exec.py` 的失败结果会包含 `error_type` 和 `error_details`。`error_details` 会把常见问题归类为 `credential`、`permission`、`region_or_endpoint`、`project`、`quota`、`parameter`、`not_found`、`network` 等，并给出下一步建议，方便 Agent 判断是配置问题、权限问题还是参数问题。
+
+`hcloud_eip_change_flow.py` 默认只生成计划和后置 `ShowPublicip` 验证计划。真实提交必须显式使用 `--execute-submit --confirm-submit`，并建议先跑 `--execute-dryrun`；未确认时脚本会返回 `submit_guard_failure`，不会执行变更。
 
 ## 前置条件
 

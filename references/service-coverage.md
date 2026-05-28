@@ -22,7 +22,7 @@
 | `VPC` | Medium | 有 workflow、playbook、list-only discovery 和第一层 show 查询 | 本地可发现 VPC list/count 型 operation；`ShowVpc`、`ShowSubnet`、`ShowSecurityGroup` 等详情查询需要显式目标 ID |
 | `IMS` | Medium | 有 workflow、playbook、list-only discovery 和镜像详情查询 | 本地可发现镜像 list 型 operation；`GlanceShowImage` 等资源级操作需要目标 ID，不作为通用 discovery 入口 |
 | `KPS` | Medium | 有 workflow、playbook、list-only discovery 和 keypair 详情查询 | 本地已验证 `ListKeypairs` / `ListKeypairDetail` operation 名称；密钥创建和私钥处理需要专门风险 gate |
-| `EIP` | Medium | 有 list/count 型 discovery 入口 | 本地可发现 EIP、带宽、公网 IP 池、配额等查询 operation；operation detail 缓存不完整时会保守省略可选参数 |
+| `EIP` | Medium | 有 list/count 型 discovery、`ShowPublicip` 和守护式变更 flow | 本地可发现 EIP、带宽、公网 IP 池、配额等查询 operation；operation detail 缓存不完整时会保守省略可选参数；真实 submit 仍需显式确认 |
 | `ELB` | Low | 已登记常用查询入口、第一层 show 查询和 planner-only 变更入口 | service 可见但本地没有 operation detail；用于负载均衡验证和离线问题集覆盖，不等同于完整 ELB 执行能力 |
 | `EVS` | Low | 已登记常用查询入口、volume/snapshot 详情和 planner-only 变更入口 | service 可见但本地没有 operation detail；云硬盘挂载、扩容、格式化仍需云侧和 ECS 内双重验收 |
 | `NAT` | Low | 已登记常用查询入口和 NAT/DNAT/SNAT 详情查询 | service 可见但本地没有 operation detail；NAT 创建、绑定和删除仍未开放通用变更 |
@@ -84,6 +84,7 @@
 - `hcloud_resource_detail_probe.py` 可以顺序执行 list-then-detail 抽样；EVS/NAT 当前区域无资源时会返回 skipped，而不是把缺资源当作失败
 - CDN `ListDomains` 已验证需要使用 KooCLI 支持区域；registry 会把 `cn-north-4` 调整到 `cn-north-1`
 - `hcloud_service_change_plan.py` 可以为多服务变更生成风险计划和验证建议，但不会执行 submit
+- `hcloud_eip_change_flow.py` 可以把 EIP 变更串成 Plan -> dry-run -> guarded submit -> ShowPublicip verify；默认不执行 submit，且 submit 必须显式确认
 - `hcloud_resource_verify.py` 可以基于 JSON 查询结果验证 EIP、VPC、ELB、EVS、NAT、RDS、CCE、CDN、DNS、SCM 等资源状态
 - `check_question_coverage.py` 可用外部 `generated_questions` 和 `data-by-changping/data.xlsx` 回归验证 schema、CRUD type、风险分类、registry 覆盖、人工验证步骤风险线索和已注册验证 operation 的执行路径
 
@@ -106,6 +107,7 @@
 - 先做上下文确认
 - 先用 service 级 discovery 和 playbook 梳理动作
 - 已知资源 ID 时，可用 `hcloud_resource_query.py` 做第一层详情查询
+- EIP 变更优先用 `hcloud_eip_change_flow.py` 生成计划、dry-run 和 `ShowPublicip` 后置验证；真实 submit 需要单独确认
 - 把真实变更执行建立在进一步元数据可用之后
 
 ### 当用户任务在 ELB / EVS / NAT / RDS / CCE / CDN / DNS / SCM / CES 范围内

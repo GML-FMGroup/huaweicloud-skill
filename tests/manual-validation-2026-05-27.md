@@ -372,3 +372,46 @@ python3 scripts/hcloud_obs_readonly.py \
 - readiness 的非 strict 执行模式现在只放过云端执行失败，不再掩盖 plan 阶段失败。
 - RDS workbook 别名 `ShowConfigurationDetail` 映射到 KooCLI 实际操作 `ShowConfiguration`。
 - RDS 参数模板详情响应是顶层对象，resource verifier 已支持这种响应形态。
+
+## 验证 10：普通 hcloud 错误诊断与 EIP 变更闭环
+
+### Command shape
+
+```bash
+python3 scripts/hcloud_safe_exec.py \
+  --command-part=not-a-real-hcloud-command \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_eip_change_flow.py \
+  --operation UpdatePublicip \
+  --publicip-id=<publicip-id> \
+  --arg=--publicip_id=<publicip-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+```bash
+python3 scripts/hcloud_eip_change_flow.py \
+  --operation UpdatePublicip \
+  --publicip-id=<publicip-id> \
+  --arg=--publicip_id=<publicip-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --execute-submit \
+  --pretty
+```
+
+### Result
+
+- `hcloud_safe_exec.py` 失败结果现在包含 `error_details`，可把常见错误归类到 credential、permission、region_or_endpoint、project、quota、parameter、not_found、network 等。
+- 本地 sandbox 中的无效 hcloud 命令返回 `APIE_ERROR`，并根据 `no such host` 进一步诊断为 `network`，给出网络/DNS/代理排查建议。
+- EIP flow 默认只生成 service change plan 和 `ShowPublicip` 验证计划，不执行真实 submit。
+- 未带 `--confirm-submit` 时，即使传入 `--execute-submit`，脚本也返回 `submit_guard_failure`，没有执行真实变更。
+
+### Notes
+
+- 本验证没有创建、修改、绑定、解绑或删除任何 EIP。
+- 真实 EIP submit 仍需用户对具体 EIP、region、project、计费/网络影响、回滚方式和 dry-run 结果逐项确认。

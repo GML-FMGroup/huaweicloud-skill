@@ -183,6 +183,7 @@ python3 scripts/hcloud_safe_exec.py \
 - 自动给出结构化 JSON 结果
 - 脱敏命令、stdout/stderr、`parsed_json` 和 `--parsed-json-file` 中的密钥类信息
 - 识别常见错误类型
+- 失败时输出 `error_details`，把常见配置、权限、region/project、配额、参数、not found 和网络问题归类并给出建议
 
 对于 `configure` 一类系统命令，可改用：
 
@@ -410,6 +411,28 @@ python3 scripts/hcloud_service_change_plan.py \
 - 附加服务上下文、known limits 和后置验证建议
 - 对 registry 声明的 `supported_cli_regions` 同样生效，避免为 CDN 这类服务生成已知不可用的区域命令
 - 不执行真实变更；submit 命令必须单独获得用户确认后才可运行
+
+### 13.5. EIP 守护式变更闭环
+
+```bash
+python3 scripts/hcloud_eip_change_flow.py \
+  --operation UpdatePublicip \
+  --publicip-id=<publicip-id> \
+  --arg=--publicip_id=<publicip-id> \
+  --region=cn-north-4 \
+  --project-id=<project-id> \
+  --pretty
+```
+
+用途：
+
+- 把 EIP 变更串成 Plan -> dry-run -> submit -> ShowPublicip verify 的同一份结构化结果
+- 默认只生成计划和验证计划，不执行真实提交
+- `--execute-dryrun` 才执行 dry-run 命令
+- `--execute-submit` 必须同时带 `--confirm-submit`，否则返回 `submit_guard_failure`
+- `--execute-verify` 会调用 `ShowPublicip` 验证目标 EIP
+
+真实 submit 前必须确认目标 EIP、region、project、计费/网络影响、回滚方式和 dry-run 结果。不要把本脚本当作通用自动提交器；它只是 EIP 的第一个参考闭环。
 
 OBS 变更使用专用 planner：
 

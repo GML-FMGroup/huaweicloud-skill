@@ -29,6 +29,7 @@ def load_module(name: str, path: Path):
 
 
 hcloud_readonly_smoke = load_module("hcloud_readonly_smoke", SCRIPTS / "hcloud_readonly_smoke.py")
+hcloud_eip_change_flow = load_module("hcloud_eip_change_flow", SCRIPTS / "hcloud_eip_change_flow.py")
 hcloud_obs_change_plan = load_module("hcloud_obs_change_plan", SCRIPTS / "hcloud_obs_change_plan.py")
 hcloud_obs_readonly = load_module("hcloud_obs_readonly", SCRIPTS / "hcloud_obs_readonly.py")
 hcloud_resource_detail_probe = load_module("hcloud_resource_detail_probe", SCRIPTS / "hcloud_resource_detail_probe.py")
@@ -40,6 +41,28 @@ hcloud_service_change_plan = load_module("hcloud_service_change_plan", SCRIPTS /
 
 class MultiServiceToolsTest(unittest.TestCase):
     """Validate multi-service tool contracts without calling hcloud."""
+
+    def eip_flow_args(self, **overrides):
+        """Return default EIP flow args for unit tests."""
+        values = {
+            "operation": "UpdatePublicip",
+            "publicip_id": "eip-1",
+            "region": "cn-north-4",
+            "project_id": "project-1",
+            "profile": None,
+            "json_input_file": None,
+            "arg": ["--publicip_id=eip-1"],
+            "no_dryrun": False,
+            "allow_unregistered": False,
+            "execute_dryrun": False,
+            "execute_submit": False,
+            "confirm_submit": False,
+            "skip_dryrun": False,
+            "execute_verify": False,
+            "timeout": 1,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
 
     def test_readonly_smoke_builds_registered_service_commands(self) -> None:
         args = SimpleNamespace(
@@ -157,6 +180,46 @@ class MultiServiceToolsTest(unittest.TestCase):
         self.assertEqual(result["operation"], "ShowPublicip")
         self.assertEqual(result["requested_operation"], "showpublicip")
         self.assertIn("--arg=--publicip_id=eip-1", result["command"])
+
+    def test_eip_change_flow_builds_guarded_plan(self) -> None:
+        result = hcloud_eip_change_flow.build_flow(self.eip_flow_args())
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["planning_only"])
+        self.assertEqual(result["service"], "EIP")
+        self.assertEqual(result["service_plan"]["operation"], "UpdatePublicip")
+        self.assertIn("--arg=--dryrun", result["service_plan"]["commands"]["dryrun_or_plan"])
+        self.assertIn("--expect-json", result["service_plan"]["commands"]["submit"])
+        self.assertNotIn("submit", result)
+
+    def test_eip_change_flow_requires_submit_confirmation(self) -> None:
+        result = hcloud_eip_change_flow.build_flow(
+            self.eip_flow_args(execute_submit=True, execute_dryrun=True)
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["submit_guard_failure"]["error"], "Submit execution requires --confirm-submit.")
+
+    def test_eip_change_flow_executes_dryrun_and_verify_with_mocks(self) -> None:
+        with patch.object(
+            hcloud_eip_change_flow,
+            "execute_command",
+            return_value={"success": True, "parsed_json": {"publicip": {"id": "eip-1"}}},
+        ) as dryrun_mock, patch.object(
+            hcloud_eip_change_flow.hcloud_resource_query,
+            "execute_command",
+            return_value={"success": True, "parsed_json": {"publicip": {"id": "eip-1", "status": "DOWN"}}},
+        ) as verify_mock:
+            result = hcloud_eip_change_flow.build_flow(
+                self.eip_flow_args(execute_dryrun=True, execute_verify=True)
+            )
+
+        self.assertTrue(result["success"], result)
+        self.assertTrue(result["dryrun"]["success"])
+        self.assertTrue(result["verification"]["success"])
+        self.assertEqual(result["verification"]["operation"], "ShowPublicip")
+        dryrun_mock.assert_called_once()
+        verify_mock.assert_called_once()
 
     def test_resource_query_builds_vpc_show_command(self) -> None:
         args = SimpleNamespace(

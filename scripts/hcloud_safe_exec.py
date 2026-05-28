@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -37,6 +38,108 @@ SECRET_HINTS = (
 )
 OBSUTIL_SECRET_ARG_NAMES = {"-i", "-k", "-t", "-token"}
 ERROR_TYPES = ("USE_ERROR", "NETWORK_ERROR", "OPENAPI_ERROR", "APIE_ERROR")
+CLOUD_ERROR_CODE_KEYS = ("error_code", "errorCode", "code", "errCode")
+CLOUD_ERROR_MESSAGE_KEYS = ("error_msg", "errorMsg", "message", "msg", "error_description", "reason")
+
+COMMON_ERROR_CATEGORIES = (
+    (
+        "credential",
+        (
+            r"\binvalidaccesskeyid\b",
+            r"\bsignaturedoesnotmatch\b",
+            r"\binvalidcredential\b",
+            r"\binvalidtoken\b",
+            r"\bauthentication\b",
+            r"\baccess key\b",
+            r"\bak/sk\b",
+            r"\bsignature\b",
+        ),
+        "Check AK/SK/security token, active profile, and whether the credentials belong to the target Huawei Cloud account or site.",
+    ),
+    (
+        "permission",
+        (
+            r"\baccessdenied\b",
+            r"\bforbidden\b",
+            r"\bunauthorized\b",
+            r"\bnot authorized\b",
+            r"\bpermission\b",
+            r"\biam\b",
+        ),
+        "Check IAM permissions, agency policy, project scope, and whether the service is enabled for this account.",
+    ),
+    (
+        "quota",
+        (
+            r"\bquota\b",
+            r"\binsufficient\b",
+            r"\blimit exceeded\b",
+            r"\btoo many\b",
+        ),
+        "Check service quota, resource limits, and current usage before retrying or requesting quota increase.",
+    ),
+    (
+        "region_or_endpoint",
+        (
+            r"\bunsupported region\b",
+            r"\binvalid region\b",
+            r"\bregion\b",
+            r"\bendpoint\b",
+        ),
+        "Check --cli-region, endpoint availability, and whether this service accepts the requested CLI region.",
+    ),
+    (
+        "project",
+        (
+            r"\bproject[_ -]?id\b",
+            r"\bproject\b",
+        ),
+        "Check project_id, region-project mapping, and whether the active profile has access to the target project.",
+    ),
+    (
+        "parameter",
+        (
+            r"\binvalidparameter\b",
+            r"\bmissingparameter\b",
+            r"\brequired parameter\b",
+            r"\bparameter\b",
+            r"\bbad request\b",
+            r"\binvalid request\b",
+            r"\bunknown flag\b",
+            r"\bunknown command\b",
+        ),
+        "Check operation help, required parameters, JSON body shape, and CLI argument names.",
+    ),
+    (
+        "not_found",
+        (
+            r"\bnotfound\b",
+            r"\bnot found\b",
+            r"\bnosuch\b",
+            r"\bdoes not exist\b",
+        ),
+        "Check resource ID/name, region, project, and whether the resource has already been deleted.",
+    ),
+    (
+        "network",
+        (
+            r"\btimeout\b",
+            r"\bconnection refused\b",
+            r"\bno such host\b",
+            r"\bi/o timeout\b",
+            r"\btls handshake\b",
+        ),
+        "Check connectivity, proxy/DNS settings, and KooCLI timeout/retry configuration.",
+    ),
+)
+
+ERROR_TYPE_CATEGORY = {
+    "USE_ERROR": "parameter",
+    "NETWORK_ERROR": "network",
+    "OPENAPI_ERROR": "cloud_api",
+    "APIE_ERROR": "metadata",
+    "TIMEOUT": "network",
+}
 
 
 def load_json(path: Path) -> Any:
@@ -196,6 +299,122 @@ def advice_for_error(error_type: str | None) -> str | None:
     return None
 
 
+def iter_dicts(value: Any) -> list[dict[str, Any]]:
+    """Return all dictionaries found inside a JSON-like value."""
+    if isinstance(value, dict):
+        nested = [value]
+        for child in value.values():
+            nested.extend(iter_dicts(child))
+        return nested
+    if isinstance(value, list):
+        nested = []
+        for child in value:
+            nested.extend(iter_dicts(child))
+        return nested
+    return []
+
+
+def first_string_field(mapping: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    """Return the first non-empty string value for any known key."""
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (int, float)):
+            return str(value)
+    return None
+
+
+def extract_cloud_error(parsed_json: Any, stdout: str, stderr: str) -> dict[str, str | None]:
+    """Extract cloud error code and message from parsed JSON or text output."""
+    for mapping in iter_dicts(parsed_json):
+        code = first_string_field(mapping, CLOUD_ERROR_CODE_KEYS)
+        message = first_string_field(mapping, CLOUD_ERROR_MESSAGE_KEYS)
+        if code or message:
+            return {"code": code, "message": message, "source": "parsed_json"}
+
+    combined = f"{stdout}\n{stderr}"
+    bracket_match = re.search(
+        r"error code\s+\[(?P<code>[^\]]+)\].*?error message\s+\[(?P<message>[^\]]+)\]",
+        combined,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if bracket_match:
+        return {
+            "code": bracket_match.group("code").strip(),
+            "message": bracket_match.group("message").strip(),
+            "source": "text",
+        }
+
+    code_match = re.search(
+        r'"?(?:error_code|errorCode|code|errCode)"?\s*[:=]\s*"?(?P<code>[A-Za-z0-9_.-]+)"?',
+        combined,
+        flags=re.IGNORECASE,
+    )
+    message_match = re.search(
+        r'"?(?:error_msg|errorMsg|message|msg)"?\s*[:=]\s*"(?P<message>[^"\n]+)"',
+        combined,
+        flags=re.IGNORECASE,
+    )
+    if code_match or message_match:
+        return {
+            "code": code_match.group("code").strip() if code_match else None,
+            "message": message_match.group("message").strip() if message_match else None,
+            "source": "text",
+        }
+    return {"code": None, "message": None, "source": None}
+
+
+def classify_common_error(
+    error_type: str | None,
+    stdout: str,
+    stderr: str,
+    parsed_json: Any,
+) -> dict[str, Any] | None:
+    """Return a structured diagnosis for common hcloud configuration and API failures."""
+    if not error_type and not stdout and not stderr and parsed_json is None:
+        return None
+
+    cloud_error = extract_cloud_error(parsed_json, stdout, stderr)
+    combined = "\n".join(
+        item
+        for item in (
+            error_type or "",
+            cloud_error.get("code") or "",
+            cloud_error.get("message") or "",
+            stdout,
+            stderr,
+        )
+        if item
+    )
+
+    signals: list[str] = []
+    category = ERROR_TYPE_CATEGORY.get(error_type or "", "unknown")
+    advice = advice_for_error(error_type)
+    for candidate, patterns, candidate_advice in COMMON_ERROR_CATEGORIES:
+        matched_patterns = [pattern for pattern in patterns if re.search(pattern, combined, flags=re.IGNORECASE)]
+        if matched_patterns:
+            category = candidate
+            advice = candidate_advice
+            signals.extend(matched_patterns[:3])
+            break
+
+    if error_type == "APIE_ERROR" and category == "metadata":
+        advice = advice or "Live metadata lookup failed. Use local metadata cache, curated references, or official docs."
+    if category == "unknown" and not cloud_error.get("code") and not cloud_error.get("message"):
+        return None
+
+    return {
+        "category": category,
+        "error_type": error_type,
+        "cloud_error_code": cloud_error.get("code"),
+        "cloud_error_message": cloud_error.get("message"),
+        "source": cloud_error.get("source") or ("error_type" if error_type else "text"),
+        "signals": signals,
+        "advice": advice,
+    }
+
+
 def trim_text(text: str, max_chars: int) -> tuple[str, bool]:
     """Trim text to a maximum length and report whether truncation happened."""
     if len(text) <= max_chars:
@@ -330,6 +549,16 @@ def main() -> int:
         error_type = classify_error(raw_stdout, raw_stderr)
         logical_success = completed.returncode == 0 and error_type is None
 
+        redacted_parsed_json = redact_json(parsed_json, known_secrets) if parsed_json is not None else None
+        error_details = None
+        if not logical_success:
+            error_details = classify_common_error(
+                error_type,
+                redacted_stdout,
+                redacted_stderr,
+                redacted_parsed_json,
+            )
+
         result = {
             "success": logical_success,
             "return_code": completed.returncode,
@@ -342,8 +571,9 @@ def main() -> int:
             "stdout_truncated": stdout_truncated,
             "stderr_truncated": stderr_truncated,
             "error_type": error_type,
-            "advice": advice_for_error(error_type),
-            "parsed_json": redact_json(parsed_json, known_secrets) if parsed_json is not None else None,
+            "error_details": error_details,
+            "advice": (error_details or {}).get("advice") or advice_for_error(error_type),
+            "parsed_json": redacted_parsed_json,
             "parsed_json_error": parsed_json_error,
             "config_context": {
                 "cwd": args.cwd,
@@ -365,6 +595,15 @@ def main() -> int:
             "stdout_truncated": False,
             "stderr_truncated": False,
             "error_type": None,
+            "error_details": {
+                "category": "local_environment",
+                "error_type": None,
+                "cloud_error_code": None,
+                "cloud_error_message": str(exc),
+                "source": "exception",
+                "signals": ["hcloud binary not found"],
+                "advice": "Install KooCLI or make sure `hcloud` is available in PATH.",
+            },
             "advice": "Install KooCLI or make sure `hcloud` is available in PATH.",
             "parsed_json": None,
             "parsed_json_error": None,
@@ -390,6 +629,15 @@ def main() -> int:
             "stdout_truncated": False,
             "stderr_truncated": False,
             "error_type": "TIMEOUT",
+            "error_details": {
+                "category": "network",
+                "error_type": "TIMEOUT",
+                "cloud_error_code": None,
+                "cloud_error_message": "The command timed out.",
+                "source": "exception",
+                "signals": ["timeout"],
+                "advice": "The command timed out. Consider increasing --timeout or KooCLI timeout arguments.",
+            },
             "advice": "The command timed out. Consider increasing --timeout or KooCLI timeout arguments.",
             "parsed_json": None,
             "parsed_json_error": None,

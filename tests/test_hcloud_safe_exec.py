@@ -87,6 +87,30 @@ class SafeExecRedactionTest(unittest.TestCase):
 
         self.assertEqual(secrets, {"encoded-user-data", "key-value"})
 
+    def test_classify_common_error_extracts_cloud_error_from_json(self) -> None:
+        parsed = {"error_code": "ECS.0123", "error_msg": "project_id does not exist in this region"}
+
+        details = hcloud_safe_exec.classify_common_error("OPENAPI_ERROR", "", "", parsed)
+
+        self.assertIsNotNone(details)
+        self.assertEqual(details["category"], "region_or_endpoint")
+        self.assertEqual(details["cloud_error_code"], "ECS.0123")
+        self.assertEqual(details["cloud_error_message"], "project_id does not exist in this region")
+        self.assertIn("region", details["advice"].lower())
+
+    def test_classify_common_error_extracts_obs_style_text_error(self) -> None:
+        stdout = (
+            "List buckets failed, status [403], error code [InvalidAccessKeyId], "
+            "error message [The OBS Access Key Id you provided does not exist.]"
+        )
+
+        details = hcloud_safe_exec.classify_common_error(None, stdout, "", None)
+
+        self.assertIsNotNone(details)
+        self.assertEqual(details["category"], "credential")
+        self.assertEqual(details["cloud_error_code"], "InvalidAccessKeyId")
+        self.assertIn("AK/SK", details["advice"])
+
     def test_cli_redacts_parsed_json_and_parsed_json_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -139,6 +163,44 @@ class SafeExecRedactionTest(unittest.TestCase):
         self.assertNotIn("password-value", completed.stdout)
         self.assertNotIn("token-value", completed.stdout)
         self.assertNotIn("encoded-user-data", completed.stdout)
+
+    def test_cli_emits_error_details_from_failed_json_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            hcloud_path = tmp_path / "hcloud"
+            hcloud_path.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print('[OPENAPI_ERROR] request failed')\n"
+                "print(json.dumps({'error_code': 'VPC.1001', 'error_msg': 'Invalid region cn-x'}))\n"
+                "sys.exit(1)\n",
+                encoding="utf-8",
+            )
+            hcloud_path.chmod(hcloud_path.stat().st_mode | stat.S_IXUSR)
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--service",
+                    "VPC",
+                    "--operation",
+                    "ListVpcs",
+                    "--expect-json",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}"},
+            )
+
+            result = json.loads(completed.stdout)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_type"], "OPENAPI_ERROR")
+        self.assertEqual(result["error_details"]["category"], "region_or_endpoint")
+        self.assertIn("region", result["advice"].lower())
 
 
 if __name__ == "__main__":

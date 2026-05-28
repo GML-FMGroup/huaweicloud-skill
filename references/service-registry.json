@@ -135,6 +135,7 @@
         "DeleteVpcPeering"
       ],
       "planner": "scripts/hcloud_service_change_plan.py",
+      "change_flow": "scripts/hcloud_eip_change_flow.py",
       "job_verifier": null,
       "resource_verifier": "scripts/hcloud_resource_verify.py",
       "playbooks": [
@@ -259,7 +260,7 @@
       ],
       "known_limits": [
         "EIP metadata in KooCLI may not include operation detail files, so generated discovery commands omit optional parameters unless metadata confirms support.",
-        "Create, bind, unbind, update, and delete operations are planner-only until hcloud dry-run or official operation help confirms exact parameters."
+        "Generic service changes remain planner-first. Use scripts/hcloud_eip_change_flow.py for guarded dry-run/submit/ShowPublicip verification, and execute submit only after explicit confirmation."
       ]
     },
     "ELB": {
