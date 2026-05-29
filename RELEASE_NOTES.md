@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.2.1 / 0.2.1 - 2026-05-29
+
+v0.2.1 is a documentation and agent-guidance patch release focused on large hcloud query outputs. It does not change runtime script behavior.
+
+### Changes
+
+- Marks `IMS ListImages`, `ECS ListFlavors`, and `ECS ListFlavorSellPolicies` as high-risk large-output APIs in the default workflow.
+- Recommends filtering, `--cli-query`, `--result-file`, and `--parsed-json-file` patterns so agents can keep full results on disk while returning only counts, key samples, summaries, and file locations to the conversation.
+- Adds IMS image discovery guidance for large `ListImages` responses.
+- Adds ECS create readiness guidance for large flavor and sell policy responses, including file-backed join/filter analysis.
+
+### Validation
+
+- Documentation-only change.
+- `git diff --check` passed before release.
+
 ## v0.2 / 0.2.0 - 2026-05-28
 
 v0.2 把 `huaweicloud-skill` 从一个以 ECS 和基础 KooCLI 工具为主的技能，升级为面向多服务、可审计、可回归的华为云执行型 skill。核心变化是：查询路径更广，变更路径更安全，验证路径更具体，错误原因更容易被 agent 读取和解释。

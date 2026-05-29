@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-05-29
+
+- Strengthened large-output handling guidance for `IMS ListImages`, `ECS ListFlavors`, and `ECS ListFlavorSellPolicies`.
+- Added explicit recommendations to use filtering, field projection, result files, parsed JSON files, and small summaries instead of sending full large JSON payloads back into the conversation.
+- Updated IMS and ECS readiness playbooks with large-result handling patterns for image discovery, flavor selection, and flavor sell policy analysis.
+
 ## 0.2.0 - 2026-05-28
 
 Full release note: see `RELEASE_NOTES.md`.
